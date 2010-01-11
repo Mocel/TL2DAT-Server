@@ -200,10 +200,27 @@ sub set_error {
 }
 
 
+sub dump_headers {
+    my $req = shift;
+
+    my $headers = $req->headers or return;
+
+    my @result;
+    for my $name ($headers->header_field_names) {
+        push @result, qq{Header "$name": } . $headers->header($name);
+    }
+
+    return join ', ', @result;
+}
+
 sub bbs_handler {
     my ($req, $res) = @_;
 
     warn "bbs_handler: Request ", $req->uri, "\n";
+
+    if (my $temp = dump_headers($req)) {
+        warn "$temp\n";
+    }
 
     my @content;
 
