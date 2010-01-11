@@ -20,8 +20,8 @@ use YAML::Syck;
 
 use DatLine;
 
-my $DatLine;
-my $CONF;
+my $DatLine = DatLine->new({ config_dir => $FindBin::Bin });
+my $CONF = $DatLine->conf;
 
 # Web サーバー用のセッション
 my $aliases = POE::Component::Server::HTTP->new(
@@ -45,8 +45,6 @@ POE::Kernel->run;
 
 sub start_handler {
     my ($kern, $heap, $sess) = @_[KERNEL, HEAP, SESSION];
-    $DatLine ||= DatLine->new({ config_dir => $FindBin::Bin });
-    $CONF = $DatLine->conf;
     $heap->{datline} = $DatLine;
     $heap->{next_alarm} = int(time()) + 1;
     $kern->alarm(tick => $heap->{next_alarm});
