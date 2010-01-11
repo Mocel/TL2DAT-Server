@@ -28,7 +28,6 @@ if (exists $CONF->{term_encoding}) {
     binmode STDERR, ":encoding($enc)";
 }
 
-my $TW;
 my $DatLine;
 
 # Web サーバー用のセッション
@@ -55,12 +54,6 @@ sub start_handler {
     my ($kern, $heap, $sess) = @_[KERNEL, HEAP, SESSION];
     $DatLine ||= DatLine->new({ config_dir => $FindBin::Bin });
     $heap->{datline} = $DatLine;
-    $TW ||= Net::Twitter::Lite->new(
-        ssl => 1,
-        username => $CONF->{twitter}->{id},
-        password => $CONF->{twitter}->{password},
-    );
-    $heap->{tw} = $TW;
     $heap->{next_alarm} = int(time()) + 1;
     $kern->alarm(tick => $heap->{next_alarm});
 }
@@ -69,32 +62,8 @@ sub get_tl_handler {
     my ($kern, $heap, $sess) = @_[KERNEL, HEAP, SESSION];
 
     my $datline = $heap->{datline};
-    my $tw = $heap->{tw};
+    $datline->get_timeline;
 
-    my $thread = $datline->current_thread;
-    say "Thread filename: $thread->[0]";
-
-    # dat ファイル オープン
-    $datline->open_thread;
-    my $latest_id = $datline->latest_id;
-
-    # TL 取得
-    my $tl_count = $CONF->{get_tl_count} || 50;
-    my %param = ( count => $tl_count );
-    $param{since_id} = $latest_id if $latest_id;
-
-    my $ret = eval { $tw->home_timeline(\%param); };
-    #my $ret = eval { $tw->user_timeline({screen_name => 'Mocel', count => 100}); };
-    if (! $ret) {
-        warn "home_timeline() failed: $@";
-        return;
-    }
-
-    for my $item (reverse @$ret) {
-        $datline->write_res($item);
-    }
-
-    $datline->close_thread;
     return;
 }
 
@@ -270,9 +239,7 @@ sub bbs_handler {
         my $thread_id = $q->param('key');
         my $from = $decoder->decode($q->param('FROM'));
         if ($text && $thread_id) {
-            my %args = (
-                tw => $TW,
-            );
+            my %args;
 
             if ($text =~ /^>>(\d+)/) {
                 $args{in_reply_to} = $1;

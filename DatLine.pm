@@ -19,7 +19,7 @@ our $VERSION = qv('0.0.1');
 sub VERSION { $VERSION }
 
 use base qw(Class::Accessor::Fast);
-__PACKAGE__->mk_accessors(qw(conf encoder subject_list latest_id res_list));
+__PACKAGE__->mk_accessors(qw(conf encoder subject_list latest_id res_list tw));
 
 sub new {
     my ($class, $param) = @_;
@@ -32,7 +32,12 @@ sub new {
     }, $class;
 
     $self->conf(_load_config($param->{config_dir}));
-    $self->{subject_list} = [];
+
+    $self->{tw} = Net::Twitter::Lite->new(
+            ssl => 1,
+            %{ $self->conf->{twitter} },
+    );
+
     $self->{tw_strp} = DateTime::Format::Strptime->new(
         pattern => '%a %b %d %T %z %Y', time_zone => 'Asia/Tokyo',
     );
@@ -373,7 +378,7 @@ sub update_status {
     }
     warn "update_status: ", join(', ', @temp), "\n";
 
-    eval { $args->{tw}->update(\%param) };
+    eval { $self->tw->update(\%param) };
     if (my $error = $@) {
         if (blessed $error && $error->isa('Net::Twitter::Lite::Error')
             && $error->code() == 502) {
@@ -385,6 +390,47 @@ sub update_status {
     return;
 }
 
+sub get_timeline {
+    my ($self) = @_;
+
+    # 取得する件数
+    my $tl_count = $self->conf->{get_tl_count} || 60;
+
+    # リクエストパラメータ
+    my %param = (count => $tl_count);
+
+    # dat ファイルオープン
+    my $thread = $self->current_thread;
+    if (! $thread) {
+        carp("get_timeline(): open thread failed.");
+        return;
+    }
+
+    $self->open_thread;
+    warn "Thread filename: $thread->[0]\n";
+
+    # 最新スレの最後のレス ID
+    $param{since_id} = $self->latest_id if $self->latest_id;
+
+    # TL 取得
+    my $ret = eval { $self->tw->home_timeline(\%param) };
+    if (! $ret) {
+        # スレを閉じる
+        $self->close_thread;
+        carp(qq{Twitter API "home_timeline()" failed: $@});
+        return;
+    }
+
+    # dat 書き込み
+    for my $item (@$ret) {
+        $self->write_res($item);
+    }
+
+    # スレを閉じる
+    $self->close_thread;
+
+    return;
+}
 
 sub _escape_html {
     my $stuff = shift;
@@ -393,7 +439,6 @@ sub _escape_html {
     $stuff =~ s/</&lt;/g;
     $stuff =~ s/>/&gt;/g;
     $stuff =~ s/"/&quot;/g;
-#    $stuff =~ s/'/&apos;/g;
     $stuff =~ s/\x0D?\x0A/<br>/g;
 
     return $stuff;
