@@ -9,8 +9,13 @@ use utf8;
 use Carp;
 use DateTime;
 use DateTime::Format::Strptime;
+use Encode ();
 use File::Spec;
+use JSON::Any qw/XS JSON/;
+use List::MoreUtils qw(any);
+use LWP::UserAgent;
 use Net::Twitter::Lite;
+use URI;
 use YAML::Syck;
 
 use version;
@@ -18,7 +23,7 @@ our $VERSION = qv('0.0.1');
 sub VERSION { $VERSION }
 
 use base qw(Class::Accessor::Fast);
-__PACKAGE__->mk_accessors(qw(conf encoder subject_list latest_id res_list tw, thread_fh));
+__PACKAGE__->mk_accessors(qw(conf encoder subject_list latest_id res_list tw thread_fh));
 
 sub new {
     my ($class, $param) = @_;
@@ -39,18 +44,27 @@ sub new {
         binmode STDERR, ":encoding($enc)";
     }
 
+    # Twitter API Agent
     $self->{tw} = Net::Twitter::Lite->new(
             ssl => 1,
             %{ $self->conf->{twitter} },
     );
 
+    # Twitter の日付文字列解析用
     $self->{tw_strp} = DateTime::Format::Strptime->new(
         pattern => '%a %b %d %T %z %Y', time_zone => 'Asia/Tokyo',
     );
 
+    # コンソールのエンコーディング指定
     my $encoding = $self->conf->{dat_encoding} || 'cp932';
     $self->{encoder} = Encode::find_encoding($encoding)
         or croak("Cannot find encoding '$encoding'.");
+
+    # 短縮 URL 向け
+    if (exists $self->conf->{shorturl}) {
+        warn "Short URL Service available.\n";
+        $self->{json_agent} = JSON::Any->new(utf8 => 1);
+    }
 
     # subject.txt 読み込み
     $self->load_subject;
@@ -140,8 +154,9 @@ sub load_subject {
         or croak("Cannot open file $fname: $!");
 
     my $enc = $self->encoder;
-    my @list;
 
+    my @list;
+    my $cnt = 0;
     while (<$in_fh>) {
         chomp;
         my @data = split /<>/, $enc->decode($_, Encode::HTMLCREF);
@@ -149,6 +164,7 @@ sub load_subject {
         $count or next;
         push @list, [$data[0], _unescape_html($title), $count];
         warn "Load thread: title[$title], count[$count]\n";
+        last if ++$cnt > 4;
     }
 
     close $in_fh;
@@ -167,6 +183,7 @@ sub save_subject {
         or croak("Cannot open file $fname: $!");
 
     my $enc = $self->encoder;
+    my $cnt = 0;
     for my $subject (@{ $self->subject_list }) {
         my $s = join('',
             $subject->[0],
@@ -181,6 +198,7 @@ sub save_subject {
         print {$out_fh} $enc->encode("\r\n");
 
         warn "Save thread: title\[$subject->[1]], count\[$subject->[2]]\n";
+        last if ++$cnt > 4;
     }
 
     close $out_fh;
@@ -189,14 +207,17 @@ sub save_subject {
 }
 
 sub create_thread {
-    my $self = shift;
+    my ($self, $args) = @_;
+    $args ||= {};
 
     my $now = DateTime->now();
     $now->set_time_zone('Asia/Tokyo');
     $now->set_locale('ja');
 
     my $fname = $now->epoch . '.dat';
-    my $title = $now->strftime('%Y/%m/%d(%a) %T') . ' に立てられたスレッド';
+    my $title = (exists $args->{title})
+        ? $args->{title} . ' ' . $now->strftime('%Y/%m/%d(%a) %T')
+        : $now->strftime('%Y/%m/%d(%a) %T') . ' に立てられたスレッド';
 
     return $self->push_subject($fname, $title, 0);
 }
@@ -232,7 +253,7 @@ sub open_thread {
             (@data > 3 and $data[1]) or next;
 
             my $screenname;
-            ($latest_id, $screenname) = $data[1] =~ /^(\d+)(?:\@(.*))?$/;
+            ($latest_id, $screenname) = split '@', $data[1];
             $latest_id or next;
 
             # スレ番より ID のほうが圧倒的に大だから同じハッシュに
@@ -394,9 +415,10 @@ sub update_status {
             $error = "Fail Whale!";
         }
         warn "$error";
+        return;
     }
 
-    return;
+    return 1;
 }
 
 sub get_timeline {
@@ -431,7 +453,25 @@ sub get_timeline {
     }
 
     # dat 書き込み
+    my $exceed_id_list = $self->conf->{timeline}->{exceed_id};
+    warn "get_timeline: Exceed ID: ", join(', ', @$exceed_id_list), "\n";
     for my $item (@$ret) {
+        next if any { $_ eq $item->{user}->{screen_name} } @$exceed_id_list;
+
+        # 短縮 URL を展開
+        my $text = $item->{text};
+        if (my @short_url_list = $text =~ m{(http://bit.ly/[0-9a-zA-Z]+)}g) {
+            for my $url (@short_url_list) {
+                warn "get_timeline: Found short URL: $url\n";
+                if (my $long_url = $self->get_expand_url($url)) {
+                    warn "get_timeline: expand URL $url => $long_url\n";
+                    $text =~ s/$url/$long_url/;
+                }
+            }
+
+            $item->{text} = $text;
+        }
+
         $self->write_res($item);
     }
 
@@ -470,6 +510,93 @@ sub _load_config {
     my $fname = File::Spec->catfile($dir, 'config.yml');
     return LoadFile($fname);
 }
+
+sub get_shorten_url {
+    my ($self, $long_url) = @_;
+
+    return if ! exists $self->{json_agent};
+
+    my $json_agent = $self->{json_agent};
+    my $ua = $self->tw->{ua};
+    my $account = $self->conf->{shorturl};
+
+    my $req_url = URI->new('http://api.bit.ly/shorten');
+    $req_url->query_form({
+        version => '2.0.1',
+        'format' => 'json',
+        longUrl => $long_url,
+        %$account,
+    });
+
+    my $res = $ua->get($req_url);
+    if (! $res->is_success) {
+        carp("get_shorten_url: get short url failed: ", $res->status_line);
+        return;
+    }
+
+    my $result = eval { $json_agent->from_json($res->decoded_content) };
+    if ($@) {
+        carp("get_shorten_url: JSON parse failed: $@");
+        return;
+    }
+    elsif (! $result->{statusCode} || $result->{statusCode} ne 'OK') {
+        my $msg = $result->{errorMessage} || '(unknown)';
+        carp("get_shorten_url: API Call failed: $msg");
+        return;
+    }
+
+    return $result->{results}->{$long_url}->{shortUrl};
+}
+
+sub get_expand_url {
+    my ($self, $arg) = @_;
+
+    if (! $arg || ! exists $self->{json_agent}) {
+        carp("cannot expand shorten url.");
+        return;
+    }
+
+    my $json_agent = $self->{json_agent};
+    my $ua = $self->tw->{ua};
+    my $account = $self->conf->{shorturl};
+
+    my $short_url = (ref($arg) && ref($arg) eq 'URI')
+        ? $arg
+        : URI->new($arg);
+
+    my $req_url = URI->new('http://api.bit.ly/expand');
+    $req_url->query_form({
+        version => '2.0.1',
+        'format' => 'json',
+        shortUrl => $short_url,
+        %$account,
+    });
+
+    my $res = $ua->get($req_url);
+    warn "get_expand_url: GET $req_url\n";
+    if (! $res->is_success) {
+        carp("get_shorten_url: get short url failed: " . $res->status_line);
+        return;
+    }
+
+    my $result = eval { $json_agent->from_json($res->decoded_content) };
+    if ($@) {
+        carp("get_shorten_url: JSON parse failed: $@");
+        return;
+    }
+    elsif (! $result->{statusCode} || $result->{statusCode} ne 'OK') {
+        my $msg = $result->{errorMessage} || '(unknown)';
+        carp("get_shorten_url: API Call failed: $msg");
+        return;
+    }
+
+    my $path = substr $short_url->path, 1;
+    my $long_url = $result->{results}->{$path}->{longUrl};
+    warn "get_expand_url: SUCCESS ", $long_url, "\n";
+
+    return $long_url;
+}
+
 
 1;
 
