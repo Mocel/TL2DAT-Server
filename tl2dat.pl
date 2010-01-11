@@ -20,15 +20,8 @@ use YAML::Syck;
 
 use DatLine;
 
-my $CONF = load_config();
-
-if (exists $CONF->{term_encoding}) {
-    my $enc = $CONF->{term_encoding};
-    binmode STDOUT, ":encoding($enc)";
-    binmode STDERR, ":encoding($enc)";
-}
-
 my $DatLine;
+my $CONF;
 
 # Web サーバー用のセッション
 my $aliases = POE::Component::Server::HTTP->new(
@@ -53,6 +46,7 @@ POE::Kernel->run;
 sub start_handler {
     my ($kern, $heap, $sess) = @_[KERNEL, HEAP, SESSION];
     $DatLine ||= DatLine->new({ config_dir => $FindBin::Bin });
+    $CONF = $DatLine->conf;
     $heap->{datline} = $DatLine;
     $heap->{next_alarm} = int(time()) + 1;
     $kern->alarm(tick => $heap->{next_alarm});
