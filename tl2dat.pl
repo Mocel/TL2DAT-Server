@@ -112,8 +112,11 @@ sub tick_handler {
 sub tl_handler {
     my ($req, $res) = @_;
 
-    #$res->headers->header(CacheControl => 'no-cache');
-    #$res->headers->header(Expires => '-1');
+    warn "tl_handler: Request ", $req->uri, "\n";
+
+    if (my $temp = dump_headers($req)) {
+        warn "tl_handler: HTTP Header: $temp\n";
+    }
 
     my @path = split '/', $req->uri->path;
     my $filename = pop @path;
@@ -128,60 +131,86 @@ sub tl_handler {
         set_error($res, 403, '403 FORBIDDEN');
         return RC_OK;
     }
-    elsif ($ext eq '.dat') {
+
+    my $response_filename;
+    if ($ext eq '.dat') {
         # .dat ファイルの要求
         warn "tl_handler: DAT Request $filename\n";
 
-        my $filename = File::Spec->catfile($CONF->{data_dir}, 'dat', $filename);
-        
-        my $in_fh;
-        if (! open $in_fh, '<', $filename) {
-            # ファイルのオープンに失敗
-            warn "Cannot open file $filename: $!";
-            set_error($res, 404, '404 NOT FOUND');
-            return RC_OK;
-        }
-
-        warn "tl_handler: Open file $filename\n";
-
-        my $content = do { local $/; <$in_fh> };
-        close $in_fh;
-
-        $res->code(200);
-        $res->content_type('text/plain');
-        $res->content($content);
-
-        return RC_OK;
+        $response_filename = File::Spec->catfile($CONF->{data_dir}, 'dat', $filename);
     }
     elsif ($filename eq 'subject.txt') {
         # subject.txt の要求
         warn "tl_handler: subject.txt Request\n";
 
-        my $filename = File::Spec->catfile($CONF->{data_dir}, 'subject.txt');
+        $response_filename = File::Spec->catfile($CONF->{data_dir}, 'subject.txt');
+    }
 
+    if ($response_filename) {
         my $in_fh;
-        if (! open $in_fh, '<', $filename) {
+        if (! open $in_fh, '<:raw', $response_filename) {
             # ファイルのオープンに失敗
-            warn "Cannot open file $filename: $!";
+            warn "Cannot open file $response_filename: $!";
             set_error($res, 404, '404 NOT FOUND');
             return RC_OK;
         }
 
-        warn "tl_handler: Open file $filename\n";
+        warn "tl_handler: Open file $response_filename\n";
+        my @file_stat = stat $in_fh;
 
-        my $content = do { local $/; <$in_fh> };
+        # If-Modified-Since ヘッダ処理
+        if (my $if_mod_val = $req->header('If-Modified-Since')) {
+            my $if_mod = str2time($if_mod_val);
+            warn "tl_handler: If-Modified-Since = $if_mod, target file modified = $file_stat[9]\n";
+            if ($if_mod && $file_stat[9] <= $if_mod) {
+                warn "tl_handler: Not modified. skip.\n";
+                set_error($res, 304, '304 Not Modified');
+                return RC_OK;
+            }
+        }
+
+        # Range リクエスト処理
+        my ($readlen, $offset) = ($file_stat[7], 0);
+        if (my $range = $req->header('Range')) {
+            my ($start) = $range =~ /^bytes=(\d+)-/;
+            warn "tl_handler: Range start = $start\n";
+            if ($start && $start > 0) {
+                my $len = $file_stat[7];
+                $res->header('Accept-Ranges' => $start);
+                $res->header('Content-Range' => "bytes $start-$len/$len");
+                $offset = $start;
+                $readlen -= $offset;
+                sysseek $in_fh, $offset, 0;
+                warn "tl_handler: Content-Range = " . $res->header('Content-Range') . "\n";
+            }
+        }
+
+        warn "tl_handler: Read length $readlen, Offset $offset\n";
+        my $content = '';
+        my $sysread_len = sysread $in_fh, $content, $readlen;
         close $in_fh;
 
+        if (! $sysread_len) {
+            # ファイル読み込みエラー
+            warn "tl_handler: Error! sysread() returned undef.\n";
+            set_error($res, '500', '500 Internal Server Error');
+            return RC_OK;
+        }
+
+        warn "tl_handler: Length ", length $content, ", sysread() length $sysread_len\n";
         $res->code(200);
         $res->content_type('text/plain');
         $res->content($content);
+
+        if (my $con_len = $res->header('Content-Length')) {
+            warn "tl_handler: Content-Length = $con_len\n";
+        }
 
         return RC_OK;
     }
     else {
         # その他のエラー
         warn "tl_handler: Request error ", $req->uri, "\n";
-
         set_error($res, '403', '403 FORBIDDEN');
         return RC_OK;
     }
@@ -289,6 +318,6 @@ sub bbs_handler {
 
 sub load_config {
     my $fname = File::Spec->catfile($FindBin::Bin, 'config.yml');
-    
+
     return LoadFile($fname);
 }
