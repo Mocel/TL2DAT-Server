@@ -1,0 +1,20 @@
+server:
+# Web サーバーのポート
+  port: 80
+
+twitter:
+  id: Twitter のスクリーン名
+  password: Twitter のパスワード
+
+# subject.txt, dat ファイルの保存先
+data_dir: ./data
+
+# 1 スレの最大レス数
+max_res: 1000
+
+# TL 更新間隔(秒)
+interval: 60
+
+# 1 回の TL 更新で取得する件数
+get_tl_count: 100
+
