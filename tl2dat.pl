@@ -246,11 +246,16 @@ sub bbs_handler {
             }
 
             warn 'Post data: ', join(', ', @content), "\n";
-            $DatLine->update_status(\%args);
+            my $result;
+            if (! $DatLine->update_status(\%args)) {
+                $result = '書き込みに失敗しました。<br><br>元の画面に戻ってやり直してみてください。'
+            }
+            else {
+                $result = '書きこみが終わりました。<br><br>画面を切り替えるまでしばらくお待ち下さい。';
+            }
 
             $poe_kernel->post($tl_session => 'tick');
-
-            @content = ( '<html><head><title>書きこみました。</title><meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS"><META content=5;URL=../casket/ http-equiv=refresh></head><body>書きこみが終わりました。<br><br>画面を切り替えるまでしばらくお待ち下さい。<br>' );
+            @content = (qq{<html><head><title>書きこみました。</title><meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS"><META content=5;URL=../casket/ http-equiv=refresh></head><body>$result<br>});
         }
     }
     else {
