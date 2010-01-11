@@ -10,7 +10,6 @@ use Carp;
 use DateTime;
 use DateTime::Format::Strptime;
 use File::Spec;
-use FindBin;
 use Net::Twitter::Lite;
 use YAML::Syck;
 
@@ -19,7 +18,7 @@ our $VERSION = qv('0.0.1');
 sub VERSION { $VERSION }
 
 use base qw(Class::Accessor::Fast);
-__PACKAGE__->mk_accessors(qw(conf encoder subject_list latest_id res_list tw));
+__PACKAGE__->mk_accessors(qw(conf encoder subject_list latest_id res_list tw, thread_fh));
 
 sub new {
     my ($class, $param) = @_;
@@ -29,9 +28,16 @@ sub new {
         subject_list => [],
         latest_id => 0,
         res_list => {},
+        thread_fh => 0,
     }, $class;
 
+    # 設定ファイル読み込み
     $self->conf(_load_config($param->{config_dir}));
+    if (exists $self->conf->{term_encoding}) {
+        my $enc = $self->conf->{term_encoding};
+        binmode STDOUT, ":encoding($enc)";
+        binmode STDERR, ":encoding($enc)";
+    }
 
     $self->{tw} = Net::Twitter::Lite->new(
             ssl => 1,
@@ -42,9 +48,11 @@ sub new {
         pattern => '%a %b %d %T %z %Y', time_zone => 'Asia/Tokyo',
     );
 
-    $self->{encoder} = Encode::find_encoding('cp932')
-        or croak("Cannot find encoding 'CP932'");
+    my $encoding = $self->conf->{dat_encoding} || 'cp932';
+    $self->{encoder} = Encode::find_encoding($encoding)
+        or croak("Cannot find encoding '$encoding'.");
 
+    # subject.txt 読み込み
     $self->load_subject;
 
     return $self;
@@ -212,7 +220,7 @@ sub open_thread {
         open my $fh, '+<', $fname
             or croak("Cannot open file $fname: $!");
 
-        $self->{thread_fh} = $fh;
+        $self->thread_fh($fh);
         my %res_list;
 
         my $latest_id;
@@ -241,9 +249,10 @@ sub open_thread {
         $self->res_list(\%res_list);
     }
     else {
-        open $self->{thread_fh}, '>', $fname
+        open my $fh, '>', $fname
             or croak("Cannot open file $fname: $!");
 
+        $self->thread_fh($fh);
         $self->res_list( +{} );
     }
 
@@ -253,7 +262,7 @@ sub open_thread {
 sub close_thread {
     my $self = shift;
 
-    $self->{thread_fh} or return;
+    $self->thread_fh or return;
     undef $self->{thread_fh};
 
     $self->save_subject;
@@ -264,7 +273,7 @@ sub close_thread {
 sub write_res {
     my ($self, $item) = @_;
 
-    my $out_fh = $self->{thread_fh};
+    my $out_fh = $self->thread_fh;
     defined $out_fh or return;
 
     my $enc = $self->encoder;
