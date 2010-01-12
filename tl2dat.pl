@@ -119,6 +119,8 @@ sub tl_handler {
         warn "tl_handler: Open file $response_filename\n";
         my @file_stat = stat $in_fh;
 
+        my $r_code;
+
         # If-Modified-Since ヘッダ処理
         if (my $if_mod_val = $req->header('If-Modified-Since')) {
             my $if_mod = str2time($if_mod_val);
@@ -137,12 +139,23 @@ sub tl_handler {
             warn "tl_handler: Range start = $start\n";
             if ($start && $start > 0) {
                 my $len = $file_stat[7];
-                $res->header('Accept-Ranges' => $start);
-                $res->header('Content-Range' => "bytes $start-$len/$len");
-                $offset = $start;
-                $readlen -= $offset;
-                sysseek $in_fh, $offset, 0;
-                warn "tl_handler: Content-Range = " . $res->header('Content-Range') . "\n";
+
+                if ($start < $len) {
+                    # 送るべきデータがある
+                    $res->header('Accept-Ranges' => $start);
+                    $res->header('Content-Range' => "bytes $start-$len/$len");
+                    $offset = $start;
+                    $readlen -= $offset;
+                    sysseek $in_fh, $offset, 0;
+                    $r_code = 206;
+                    warn "tl_handler: Content-Range = " . $res->header('Content-Range') . "\n";
+                }
+                else {
+                    #送るべきデータがない
+                    warn "tl_handler: no content to send.\n";
+                    set_error($res, 304, 'Not Modified');
+                    return RC_OK;
+                }
             }
         }
 
@@ -159,7 +172,10 @@ sub tl_handler {
         }
 
         warn "tl_handler: Length ", length $content, ", sysread() length $sysread_len\n";
-        $res->code(200);
+
+        $r_code ||= 200;
+
+        $res->code($r_code);
         $res->content_type('text/plain');
         $res->content($content);
 
