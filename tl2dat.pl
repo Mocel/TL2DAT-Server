@@ -13,6 +13,7 @@ use File::Basename;
 use File::Spec;
 use HTTP::Date;
 use HTTP::Request::AsCGI;
+use HTTP::Status qw(:constants);
 use POE qw(Component::Server::HTTP);
 #use POE::Kernel;
 use Time::HiRes qw(time);
@@ -89,7 +90,7 @@ sub tl_handler {
         # エラー
         warn "tl_handler: bad requst: ", $req->uri, "\n";
 
-        set_error($res, 403, '403 FORBIDDEN');
+        set_error($res, HTTP_FORBIDDEN);
         return RC_OK;
     }
 
@@ -112,7 +113,7 @@ sub tl_handler {
         if (! open $in_fh, '<:raw', $response_filename) {
             # ファイルのオープンに失敗
             warn "Cannot open file $response_filename: $!";
-            set_error($res, 404, '404 NOT FOUND');
+            set_error($res, HTTP_NOT_FOUND);
             return RC_OK;
         }
 
@@ -127,7 +128,7 @@ sub tl_handler {
             warn "tl_handler: If-Modified-Since = $if_mod, target file modified = $file_stat[9]\n";
             if ($if_mod && $file_stat[9] <= $if_mod) {
                 warn "tl_handler: Not modified. skip.\n";
-                set_error($res, 304, '304 Not Modified');
+                set_error($res, HTTP_NOT_MODIFIED);
                 return RC_OK;
             }
         }
@@ -153,7 +154,7 @@ sub tl_handler {
                 else {
                     #送るべきデータがない
                     warn "tl_handler: no content to send.\n";
-                    set_error($res, 304, 'Not Modified');
+                    set_error($res, HTTP_NOT_MODIFIED);
                     return RC_OK;
                 }
             }
@@ -167,7 +168,7 @@ sub tl_handler {
         if (! $sysread_len) {
             # ファイル読み込みエラー
             warn "tl_handler: Error! sysread() returned undef.\n";
-            set_error($res, '500', '500 Internal Server Error');
+            set_error($res, HTTP_INTERNAL_SERVER_ERROR);
             return RC_OK;
         }
 
@@ -188,7 +189,7 @@ sub tl_handler {
     else {
         # その他のエラー
         warn "tl_handler: Request error ", $req->uri, "\n";
-        set_error($res, '403', '403 FORBIDDEN');
+        set_error($res, HTTP_FORBIDDEN);
         return RC_OK;
     }
 }
@@ -196,8 +197,9 @@ sub tl_handler {
 sub set_error {
     my ($res, $code, $text) = @_;
 
-    #$res->headers->header(CacheControl => 'no-cache');
-    #$res->headers->header(Expires => '-1');
+    $code ||= HTTP_INTERNAL_SERVER_ERROR;
+    $text ||= "$code " . HTTP::Status::status_message($code);
+
     $res->code($code);
     $res->content_type('text/html');
     $res->content("<html><head><title>$text</title></head><body><h1>$text</h1></body></html>");
