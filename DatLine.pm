@@ -305,7 +305,7 @@ sub write_res {
     my $dt = $strp->parse_datetime($item->{created_at});
     $dt->set_locale('ja');
 
-    my $id = '';
+    my $id = " ID:$item->{user}->{screen_name}";
     if ($item->{retweeted_status}) {
         $id .= ' RT';
     }
@@ -443,6 +443,9 @@ sub get_timeline {
     # 最新スレの最後のレス ID
     $param{since_id} = $self->latest_id if $self->latest_id;
 
+    # 短縮 URL のキャッシュ用
+    my %longurl_cache;
+
     # TL 取得
     my $ret = eval { $self->tw->home_timeline(\%param) };
     if (! $ret) {
@@ -452,10 +455,13 @@ sub get_timeline {
         return;
     }
 
+    # 最終取得の Tweet ID を保存
+    $self->latest_id($ret->[0]->{id});
+
     # dat 書き込み
     my $exceed_id_list = $self->conf->{timeline}->{exceed_id};
     warn "get_timeline: Exceed ID: ", join(', ', @$exceed_id_list), "\n";
-    for my $item (@$ret) {
+    for my $item (reverse @$ret) {
         next if any { $_ eq $item->{user}->{screen_name} } @$exceed_id_list;
 
         # 短縮 URL を展開
@@ -463,7 +469,13 @@ sub get_timeline {
         if (my @short_url_list = $text =~ m{(http://(?:bit\.ly|j\.mp)/[0-9a-zA-Z]+)}g) {
             for my $url (@short_url_list) {
                 warn "get_timeline: Found short URL: $url\n";
-                if (my $long_url = $self->get_expand_url($url)) {
+                my $long_url;
+                if (exists $longurl_cache{$url}) {
+                    warn "get_timeline: expand URL $url => $long_url (cached)\n";
+                    $long_url = $longurl_cache{$url};
+                    $text =~ s/$url/$long_url/;
+                }
+                elsif ($long_url = $self->get_expand_url($url)) {
                     warn "get_timeline: expand URL $url => $long_url\n";
                     $text =~ s/$url/$long_url/;
                 }
