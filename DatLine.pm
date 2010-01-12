@@ -460,7 +460,7 @@ sub get_timeline {
 
         # 短縮 URL を展開
         my $text = $item->{text};
-        if (my @short_url_list = $text =~ m{(http://bit.ly/[0-9a-zA-Z]+)}g) {
+        if (my @short_url_list = $text =~ m{(http://(?:bit\.ly|j\.mp)/[0-9a-zA-Z]+)}g) {
             for my $url (@short_url_list) {
                 warn "get_timeline: Found short URL: $url\n";
                 if (my $long_url = $self->get_expand_url($url)) {
