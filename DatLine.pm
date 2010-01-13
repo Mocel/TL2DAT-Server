@@ -459,7 +459,7 @@ sub get_timeline {
     $self->latest_id($ret->[0]->{id});
 
     # dat 書き込み
-    my $exceed_id_list = $self->conf->{timeline}->{exceed_id};
+    my $exceed_id_list = $self->conf->{timeline}->{exceed_id} || [];
     warn "get_timeline: Exceed ID: ", join(', ', @$exceed_id_list), "\n";
     for my $item (reverse @$ret) {
         next if any { $_ eq $item->{user}->{screen_name} } @$exceed_id_list;
