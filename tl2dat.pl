@@ -74,6 +74,10 @@ sub tick_handler {
 sub tl_handler {
     my ($req, $res) = @_;
 
+    if ($req->uri->path =~ m{/bbs\.cgi$}) {
+        return bbs_handler($req, $res);
+    }
+
     warn "tl_handler: Request ", $req->uri, "\n";
 
     if (my $temp = dump_headers($req)) {
@@ -101,11 +105,11 @@ sub tl_handler {
 
         $response_filename = File::Spec->catfile($CONF->{data_dir}, 'dat', $filename);
     }
-    elsif ($filename eq 'subject.txt') {
-        # subject.txt の要求
-        warn "tl_handler: subject.txt Request\n";
+    elsif ($filename eq 'subject.txt' || $filename eq 'SETTING.TXT') {
+        # subject.txt or SETTING.TXT の要求
+        warn "tl_handler: $filename Request\n";
 
-        $response_filename = File::Spec->catfile($CONF->{data_dir}, 'subject.txt');
+        $response_filename = File::Spec->catfile($CONF->{data_dir}, $filename);
     }
 
     if ($response_filename) {
@@ -233,11 +237,23 @@ sub bbs_handler {
     my @content;
 
     my $decoder = $DatLine->encoder;
-    if ($req->method eq 'POST' && $req->uri->path eq '/test/bbs.cgi') {
+    if ($req->method eq 'POST' && $req->uri->path =~ m{/test/bbs\.cgi$}) {
         my $c = HTTP::Request::AsCGI->new($req)->setup;
         my $q = CGI->new;
 
+        my @temp;
+        for my $name ($q->param) {
+            push @temp, "$name = " . $decoder->decode($q->param($name))
+        }
+        warn 'bbs_handler: POST Data[', join(', ', @temp), "]\n";
+
         my $text = $decoder->decode($q->param('MESSAGE'));
+
+        if (! $text) {
+            warn "bbs_handler: BAD REQUEST(no MESSAGE)\n";
+            set_error($res, HTTP_BAD_REQUEST);
+            return RC_OK;
+        }
 
         # 改行コードを統一
         $text =~ s/\x0D\x0A/\n/g;
@@ -251,21 +267,22 @@ sub bbs_handler {
         if ($text && $thread_id) {
             my %args;
 
-            if ($text =~ /^>>(\d+)/) {
-                $args{in_reply_to} = $1;
+            if ($text =~ /^(>>(\d+)\s*)/) {
+                my $txt = $1;
+                $args{in_reply_to} = $2;
                 $args{in_reply_to_thread} = $thread_id;
-                $text =~ s/^>>\d+\s*//;
+                $text =~ s/^$1//;
             }
 
             $args{status} = $text;
 
             for my $k (sort keys %args) {
-                push @content, "Key \[$k] = $args{$k}";
+                push @content, "$k = $args{$k}";
             }
 
-            warn 'Post data: ', join(', ', @content), "\n";
+            warn 'bbs_handler: Post data: [', join(', ', @content), "]\n";
             my $result;
-            if (! $DatLine->update_status(\%args)) {
+            if ($DatLine->update_status(\%args)) {
                 $result = '書き込みに失敗しました。<br><br>元の画面に戻ってやり直してみてください。'
             }
             else {

@@ -10,6 +10,7 @@ use Carp;
 use DateTime;
 use DateTime::Format::Strptime;
 use Encode ();
+use File::Basename;
 use File::Spec;
 use JSON::Any qw/XS JSON/;
 use List::MoreUtils qw(any);
@@ -43,6 +44,9 @@ sub new {
         binmode STDOUT, ":encoding($enc)";
         binmode STDERR, ":encoding($enc)";
     }
+
+    # subject.txt に保持する最大スレッド件数
+    $self->{max_thread} ||= 10;
 
     # Twitter API Agent
     $self->{tw} = Net::Twitter::Lite->new(
@@ -110,16 +114,32 @@ sub get_thread {
     my $sub_list = $self->subject_list;
 
     my $thread;
-    if (defined $num) {
-        for my $item (@$sub_list) {
-            my ($no) = $item->[0] =~ /^(\d+)\./;
-            $no or next;
-            if ($no == $num) {
-                $thread = $item;
-                last;
+    if ($num > $self->{max_thread}) {
+        my $fname = File::Spec->catfile($self->conf->{data_dir}, 'dat', "$num.dat");
+        if (open my $in_fh, '<', $fname) {
+            warn "get_thread: Direct open dat file $fname\n";
+
+            my $enc = $self->encoder;
+            my $cnt = 0;
+            my $title;
+            while (<$in_fh>) {
+                chomp;
+                my @data = split '<>', $enc->decode($_);
+                next if @data < 3;
+                ++$cnt;
+                $title = $data[4] if @data > 4;
             }
+            close $in_fh;
+
+            $thread = [basename($fname), $title, $cnt];
         }
-        $thread ||= $sub_list->[$num];
+        else {
+            carp("get_thread: cannot find dat file $num");
+            return;
+        }
+    }
+    else {
+        $thread = $sub_list->[$num];
     }
 
     if (! $thread || $thread->[2] > $self->conf->{max_res}) {
@@ -130,14 +150,14 @@ sub get_thread {
 }
 
 sub get_thread_filename {
-    my ($self, $num) = @_;
+    my ($self, $stuff) = @_;
 
     my $fname;
-    if ($num && ref($num) && ref($num) eq 'ARRAY') {
-        $fname = $num->[0];
+    if ($stuff && ref($stuff) && ref($stuff) eq 'ARRAY') {
+        $fname = $stuff->[0];
     }
     else {
-        my $thread = $self->get_thread($num);
+        my $thread = $self->get_thread($stuff);
         $fname = $thread->[0];
     }
 
@@ -160,11 +180,11 @@ sub load_subject {
     while (<$in_fh>) {
         chomp;
         my @data = split /<>/, $enc->decode($_, Encode::HTMLCREF);
-        my ($title, $count) = $data[1] =~ m/^(.*)\((\d+)\)/;
+        my ($title, $count) = $data[1] =~ m/^(.*) \((\d+)\)/;
         $count or next;
         push @list, [$data[0], _unescape_html($title), $count];
         warn "Load thread: title[$title], count[$count]\n";
-        last if ++$cnt > 4;
+        last if ++$cnt > $self->{max_thread};
     }
 
     close $in_fh;
@@ -189,16 +209,16 @@ sub save_subject {
             $subject->[0],
             '<>',
             _escape_html($subject->[1]),
-            '(',
+            ' (',
             $subject->[2],
             ')'
         );
 
         print {$out_fh} $enc->encode($s, Encode::HTMLCREF);
-        print {$out_fh} $enc->encode("\r\n");
+        print {$out_fh} $enc->encode("\n");
 
         warn "Save thread: title\[$subject->[1]], count\[$subject->[2]]\n";
-        last if ++$cnt > 4;
+        last if ++$cnt > $self->{max_thread};
     }
 
     close $out_fh;
@@ -241,6 +261,7 @@ sub open_thread {
         open my $fh, '+<', $fname
             or croak("Cannot open file $fname: $!");
 
+        warn "open_thread: open dat file $fname\n";
         $self->thread_fh($fh);
         my %res_list;
 
@@ -273,6 +294,7 @@ sub open_thread {
         open my $fh, '>', $fname
             or croak("Cannot open file $fname: $!");
 
+        warn "open_thread: create dat file $fname\n";
         $self->thread_fh($fh);
         $self->res_list( +{} );
     }
@@ -284,7 +306,9 @@ sub close_thread {
     my $self = shift;
 
     $self->thread_fh or return;
-    undef $self->{thread_fh};
+    close $self->{thread_fh};
+    $self->{thread_fh} = undef;
+    $self->{current_thread} = undef;
 
     $self->save_subject;
 
@@ -306,6 +330,7 @@ sub write_res {
     $dt->set_locale('ja');
 
     my $id = " ID:$item->{user}->{screen_name}";
+    $id =~ s/[-_]/+/g;
     if ($item->{retweeted_status}) {
         $id .= ' RT';
     }
@@ -335,7 +360,7 @@ sub write_res {
         print {$out_fh} $enc->encode($thread->[1], Encode::FB_HTMLCREF);
     }
 
-    print {$out_fh} $enc->encode("\x0D\x0A");
+    print {$out_fh} "\n";
 
     if (++$thread->[2] == $self->conf->{max_res}) {
         $self->close_thread;
@@ -371,11 +396,15 @@ sub update_status {
     my %param;
 
     # Reply 先の ID を取得
-    if (exists $args->{in_reply_to} && $args->{in_reply_to}) {
+    if (exists $args->{in_reply_to} && exists $args->{in_reply_to_thread}) {
         my $no = $args->{in_reply_to};
         my $thread_id = $args->{in_reply_to_thread};
 
-        if (! $thread_id) {
+        if (! $no) {
+            carp("Invalid res no!");
+            return;
+        }
+        elsif (! $thread_id) {
             carp("Invalid thread id");
             return;
         }
@@ -389,7 +418,7 @@ sub update_status {
         if (exists $res_list->{$no}) {
             my $reply_id = $res_list->{$no};
             $param{in_reply_to_status_id} = $reply_id;
-            carp("Found reply_to id: $thread_id\:$no => $reply_id");
+            warn "Found reply_to id: $thread_id\:$no => $reply_id\n";
         }
 
         if (exists $res_list->{"$no\@user"}) {
@@ -459,7 +488,8 @@ sub get_timeline {
     $self->latest_id($ret->[0]->{id});
 
     # dat 書き込み
-    my $exceed_id_list = $self->conf->{timeline}->{exceed_id} || [];
+    my $exceed_id_list = $self->conf->{timeline}->{exceed_id};
+    $exceed_id_list ||= [];
     warn "get_timeline: Exceed ID: ", join(', ', @$exceed_id_list), "\n";
     for my $item (reverse @$ret) {
         my $screen_name = $item->{user}->{screen_name};
