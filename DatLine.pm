@@ -58,10 +58,15 @@ sub new {
         # OAuth
         warn __PACKAGE__, ": OAuth mode\n";
 
+        my ($ckey, $csecret) =
+            ($self->conf->{oauth}->{consumer_key}, $self->conf->{oauth}->{consumer_secret});
+
+        warn __PACKAGE__, ": Consumer key $ckey, Secret $csecret\n";
+
         $self->{tw} = Net::Twitter::Lite->new(
             #ssl => 1,
-            consumer_key => $self->conf->{oauth}->{consumer_key},
-            consumer_secret => $self->conf->{oauth}->{consumer_secret},
+            consumer_key => $ckey,
+            consumer_secret => $csecret,
         );
         if ($@) {
             die "Twitter OAuth failed: $@";
