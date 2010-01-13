@@ -46,19 +46,45 @@ sub main {
         my $fullpath = File::Spec->catfile($dir_name, $fname);
 
         warn "Open dat file: $fname\n";
-        open my $in_fh, '<', $fullpath or die $!;
+
+        open my $in_fh, '<', $decoder->encode($fullpath) or die $!;
+
+        my $buf = do { local $/; <$in_fh> };
+        $buf = $dat_decoder->decode($buf, Encode::HTMLCREF);
+
+        close $in_fh;
+
+        $buf =~ s/\x0D\x0A/\n/g;
+        $buf =~ tr/\x0D\x0A/\n\n/;
+
+        open my $out_fh, '>', $decoder->encode($fullpath . '.new')
+            or die $!;
 
         my $cnt = 0;
         my $title;
-        while (<$in_fh>) {
+        for (split "\n", $buf) {
             chomp;
-            my @data = split '<>', $dat_decoder->decode($_, Encode::HTMLCREF);
+            my @data = split '<>', $_;
+
             next if @data < 3;
 
-            $title = $data[4] if @data > 4;
+            $data[3] = " $data[3] " if $data[3] =~ /^\S.*\S$/;
+            print {$out_fh} $dat_decoder->encode(join('<>', @data[0..3], ''));
+
+            if (@data > 4) {
+                $title = $data[4];
+                print {$out_fh} $dat_decoder->encode($title);
+            }
+
+            print {$out_fh} "\n";
+
             ++$cnt;
         }
-        close $in_fh;
+
+        close $out_fh;
+
+        rename $decoder->encode($fullpath), $decoder->encode($fullpath . '.old');
+        rename $decoder->encode($fullpath . '.new'), $decoder->encode($fullpath);
 
         push @subject_list, [$fname, $title, $cnt];
         warn "スレッド: $title ($cnt)\n";
