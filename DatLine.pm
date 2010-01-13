@@ -104,7 +104,6 @@ sub new {
             warn __PACKAGE__, ": Get Access Token succeed.\n";
 
             $self->save_token($access_token, $access_token_secret);
-            exit 0;
         }
     }
     else {
@@ -761,6 +760,8 @@ sub save_token {
 
     close $out_fh;
     close $fh;
+
+    warn "save_token: Saved access token & secret.\n";
 
     return 1;
 }
