@@ -794,6 +794,20 @@ sub get_access_token {
 
     return 1;
 }
+
+sub get_api_limit {
+    my $self = shift;
+
+    my $result = eval { $self->tw->rate_limit_status };
+    if ($@) {
+        carp("get_api_limit: get information failed: $@");
+        return;
+    }
+
+    return $result;
+}
+
+
 1;
 
 __END__

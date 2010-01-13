@@ -57,6 +57,10 @@ sub get_tl_handler {
     my $datline = $heap->{datline};
     $datline->get_timeline;
 
+    if (my $limit = $datline->get_api_limit) {
+        warn "Twitter API Status: remain $limit->{remaining_hits}, hourly limiy $limit->{hourly_limit}, reset time $limit->{reset_time}\n";
+    }
+
     return;
 }
 
