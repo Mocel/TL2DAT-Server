@@ -45,24 +45,74 @@ sub new {
         binmode STDERR, ":encoding($enc)";
     }
 
+    # dat ファイルのエンコーディング指定
+    my $encoding = $self->conf->{dat_encoding} || 'cp932';
+    $self->{encoder} = Encode::find_encoding($encoding)
+        or croak("Cannot find encoding '$encoding'.");
+
     # subject.txt に保持する最大スレッド件数
     $self->{max_thread} ||= 100;
 
     # Twitter API Agent
-    $self->{tw} = Net::Twitter::Lite->new(
-            ssl => 1,
-            %{ $self->conf->{twitter} },
-    );
+    if (exists $self->conf->{oauth}) {
+        # OAuth
+        warn __PACKAGE__, ": OAuth mode\n";
+
+        $self->{tw} = Net::Twitter::Lite->new(
+            #ssl => 1,
+            consumer_key => $self->conf->{oauth}->{consumer_key},
+            consumer_secret => $self->conf->{oauth}->{consumer_secret},
+        );
+        if ($@) {
+            die "Twitter OAuth failed: $@";
+        }
+        elsif (! $self->get_access_token) {
+            if (! eval { require Net::OAuth::Simple }) {
+                die "Need the module Net::OAuth::Simple to auth via OAuth but not found";
+            }
+
+            require ExtUtils::MakeMaker;
+
+            print "OAuth 認証 開始\n";
+            #$self->tw->request_token_url('https://twitter.com/oauth/request_token');
+            #$self->tw->authorization_url('https://twitter.com/oauth/authorize');
+
+            my $url = eval { $self->tw->get_authorization_url };
+            if ($@) {
+                die __PACKAGE__, ": Get authorization URL failed: $@";
+            }
+
+            print "認証用 URL:\n$url\n";
+            my $pin =
+                ExtUtils::MakeMaker::prompt("上記の URL にアクセスして確認した PIN# を入力してください: ");
+
+            chomp $pin;
+            $pin or Carp::croak("Invalid pin");
+
+            my ($access_token, $access_token_secret, $user_id, $screen_name) =
+                $self->tw->request_access_token(verifier => $pin);
+
+            if (! $access_token || ! $access_token_secret) {
+                Carp::croak("OAuth 認証に失敗しました。時間をおいて再試行してみてください。");
+            }
+
+            $self->save_token($access_token, $access_token_secret);
+            exit 0;
+        }
+    }
+    else {
+        # BASIC Authorization
+        warn __PACKAGE__, ": Basic Auth mode\n";
+        $self->{tw} = Net::Twitter::Lite->new(
+                ssl => 1,
+                %{ $self->conf->{twitter} },
+        );
+    }
 
     # Twitter の日付文字列解析用
     $self->{tw_strp} = DateTime::Format::Strptime->new(
         pattern => '%a %b %d %T %z %Y', time_zone => 'Asia/Tokyo',
     );
-
-    # コンソールのエンコーディング指定
-    my $encoding = $self->conf->{dat_encoding} || 'cp932';
-    $self->{encoder} = Encode::find_encoding($encoding)
-        or croak("Cannot find encoding '$encoding'.");
 
     # 短縮 URL 向け
     if (exists $self->conf->{shorturl}) {
@@ -654,7 +704,87 @@ sub get_expand_url {
     return $long_url;
 }
 
+sub save_token {
+    my ($self, $token, $secret) = @_;
 
+    my $enc_name = exists $self->conf->{term_encoding}
+        ? $self->conf->{term_encoding}
+        : 'utf8';
+
+    my $coder = Encode::find_encoding($enc_name);
+
+    my $config_fname = File::Spec->catfile($FindBin::Bin, 'config.yml');
+    open my $fh, '<', $coder->encode($config_fname)
+        or Carp::croak("Cannot open config file $config_fname: $!");
+
+    my $new_config_fname = "$config_fname.new";
+    open my $out_fh, '>', $coder->encode($new_config_fname)
+        or Carp::croak("Connot open config file $new_config_fname: $!");
+
+    my $f = 0;
+    while (<$fh>) {
+        chomp;
+        my $line = Encode::decode_utf8($_);
+
+        if ($f == 1) {
+            # oauth: まで読んだ
+            $line =~ /^\s+consumer_key:/ and ++$f;
+        }
+        elsif ($f == 2 && $line =~ /^(\s+)consumer_secret:/) {
+            # consumer_key: まで読んだ
+            my $indent = $1;
+
+            print {$out_fh} "$line\n";
+            print {$out_fh} $indent, "access_token: $token\n";
+            print {$out_fh} $indent, "access_token_secret: $secret\n";
+
+            # 残りの行をすべて書き出す
+            print {$out_fh} $_ for <$fh>;
+            last;
+        }
+        else {
+            # その他
+            $line =~ /^oauth:/ and $f = 1;
+        }
+
+        print {$out_fh} "$line\n";
+    }
+
+    close $out_fh;
+    close $fh;
+
+    return 1;
+}
+
+sub get_access_token {
+    my $self = shift;
+
+    my $tw = $self->tw;
+    my $conf = $self->conf->{oauth};
+
+    if (! exists $conf->{access_token} || ! exists $conf->{access_token_secret}) {
+        warn "get_access_token: token not found.\n";
+        return;
+    }
+
+    my ($access_token, $access_secret) =
+        @$conf{qw(access_token access_token_secret)};
+
+    if (! $access_token || ! $access_secret) {
+        warn "get_access_token: invalid token.\n";
+        return;
+    }
+
+    warn "get_access_token: Found Access token and Secret.\n";
+
+    $tw->access_token($access_token);
+    $tw->access_token_secret($access_secret);
+
+    eval { $tw->authorized };
+    return if $@;
+
+    return 1;
+}
 1;
 
 __END__
