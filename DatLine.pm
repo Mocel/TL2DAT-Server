@@ -46,7 +46,7 @@ sub new {
     }
 
     # subject.txt に保持する最大スレッド件数
-    $self->{max_thread} ||= 10;
+    $self->{max_thread} ||= 100;
 
     # Twitter API Agent
     $self->{tw} = Net::Twitter::Lite->new(
@@ -310,8 +310,6 @@ sub close_thread {
     $self->{thread_fh} = undef;
     $self->{current_thread} = undef;
 
-    $self->save_subject;
-
     return $self;
 }
 
@@ -460,6 +458,8 @@ sub get_timeline {
     my %param = (count => $tl_count);
 
     # dat ファイルオープン
+    $self->load_subject;
+
     my $thread = $self->current_thread;
     if (! $thread) {
         carp("get_timeline(): open thread failed.");
@@ -528,6 +528,8 @@ sub get_timeline {
     # スレを閉じる
     $self->close_thread;
 
+    $self->save_subject;
+
     return;
 }
 
@@ -538,7 +540,12 @@ sub _escape_html {
     $stuff =~ s/</&lt;/g;
     $stuff =~ s/>/&gt;/g;
     $stuff =~ s/"/&quot;/g;
-    $stuff =~ s/\x0D?\x0A/<br>/g;
+
+    # 改行コードの統一
+    $stuff =~ s/\x0D\x0A/\n/g;
+    $stuff =~ tr/\x0D\x0A/\n\n/;
+
+    $stuff =~ s/\n/<br>/g;
 
     return $stuff;
 }
