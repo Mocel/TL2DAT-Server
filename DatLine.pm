@@ -101,6 +101,8 @@ sub new {
                 Carp::croak("OAuth 認証に失敗しました。時間をおいて再試行してみてください。");
             }
 
+            warn __PACKAGE__, ": Get Access Token succeed.\n";
+
             $self->save_token($access_token, $access_token_secret);
             exit 0;
         }
@@ -734,9 +736,11 @@ sub save_token {
         if ($f == 1) {
             # oauth: まで読んだ
             $line =~ /^\s+consumer_key:/ and ++$f;
+            warn "save_token: Found [consukey_key]\n";
         }
         elsif ($f == 2 && $line =~ /^(\s+)consumer_secret:/) {
             # consumer_key: まで読んだ
+            warn "save_token: Found [consukey_secret]\n";
             my $indent = $1;
 
             print {$out_fh} "$line\n";
