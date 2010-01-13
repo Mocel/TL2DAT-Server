@@ -462,7 +462,15 @@ sub get_timeline {
     my $exceed_id_list = $self->conf->{timeline}->{exceed_id} || [];
     warn "get_timeline: Exceed ID: ", join(', ', @$exceed_id_list), "\n";
     for my $item (reverse @$ret) {
-        next if any { $_ eq $item->{user}->{screen_name} } @$exceed_id_list;
+        my $screen_name = $item->{user}->{screen_name};
+        if (! $screen_name) {
+            carp("Cannot find screen_name!");
+            next;
+        }
+        if (any { $_ eq $screen_name } @$exceed_id_list) {
+            warn "get_timeline: \[$screen_name] is listed on exceed. skipped.\n";
+            next;
+        }
 
         # 短縮 URL を展開
         my $text = $item->{text};
