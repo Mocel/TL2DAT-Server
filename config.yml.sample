@@ -1,0 +1,52 @@
+server:
+# Web サーバーのポート
+  port: 80
+
+# コンソールのエンコーディング Win 上なら CP932 で OK
+term_encoding: cp932
+
+# Twitter のアカウント情報
+# OAuth 認証を利用したい場合は後述の項目のみ設定すれば OK
+twitter:
+  id: Twitter のスクリーン名
+  password: Twitter のパスワード
+
+# subject.txt, dat ファイルの保存先
+data_dir: ./data
+
+# 1 スレの最大レス数
+max_res: 1000
+
+# TL 更新間隔(秒)
+interval: 60
+
+# 1 回の TL 更新で取得する件数
+get_tl_count: 100
+
+# dat ファイルのエンコーディング 通常は CP932(Shift JIS)で OK
+dat_encoding: cp932
+
+# TL の設定
+timeline:
+  # スレから除外する ID
+  # 下の例から # を取り除いて 1 行に 1 ID ずつ記述
+  exceed_id:
+  #  - exceed_id1
+  #  - exceed_id2
+
+
+# 短縮 URL bit.ly アカウント
+# ID と apiKey を書いておけば TL 上の短縮 URL が展開される
+#shorturl:
+#  login: ID
+#  apiKey: key
+
+
+# OAuth 認証設定
+# consumer key と consumer secret を記述して起動すると
+# Access Token 取得用の URL が表示され、PIN の入力を促される
+# その URL にアクセスして取得した PIN を入力すると Access Token が
+# このファイルに追記され、以降は OAuth 認証を使うようになる。
+#oauth:
+#  consumer_key: 
+#  consumer_secret: 
