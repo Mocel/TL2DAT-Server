@@ -1,5 +1,5 @@
-#!/usr/bin/perl
-# Twitter ã® TL => 2ch äº’æ› dat
+<<<<<<< .mine#!/usr/bin/perl
+# Twitter ‚Ì TL => 2ch ŒİŠ· dat
 #
 
 use strict;
@@ -24,7 +24,7 @@ use DatLine;
 my $DatLine = DatLine->new({ config_dir => $FindBin::Bin });
 my $CONF = $DatLine->conf;
 
-# Web ã‚µãƒ¼ãƒãƒ¼ç”¨ã®ã‚»ãƒƒã‚·ãƒ§ãƒ³
+# Web ƒT[ƒo[—p‚ÌƒZƒbƒVƒ‡ƒ“
 my $aliases = POE::Component::Server::HTTP->new(
     Port => $CONF->{server}->{port},
     ContentHandler => {
@@ -33,7 +33,7 @@ my $aliases = POE::Component::Server::HTTP->new(
     },
 );
 
-# TL å–å¾—ç”¨ã®ã‚»ãƒƒã‚·ãƒ§ãƒ³
+# TL æ“¾—p‚ÌƒZƒbƒVƒ‡ƒ“
 my $tl_session = POE::Session->create(
     inline_states => {
         _start => \&start_handler,
@@ -95,7 +95,7 @@ sub tl_handler {
     warn "tl_handler: $filename, $ext";
 
     if (! @path || ! $filename || ! $ext) {
-        # ã‚¨ãƒ©ãƒ¼
+        # ƒGƒ‰[
         warn "tl_handler: bad requst: ", $req->uri, "\n";
 
         set_error($res, HTTP_FORBIDDEN);
@@ -104,13 +104,13 @@ sub tl_handler {
 
     my $response_filename;
     if ($ext eq '.dat') {
-        # .dat ãƒ•ã‚¡ã‚¤ãƒ«ã®è¦æ±‚
+        # .dat ƒtƒ@ƒCƒ‹‚Ì—v‹
         warn "tl_handler: DAT Request $filename\n";
 
         $response_filename = File::Spec->catfile($CONF->{data_dir}, 'dat', $filename);
     }
     elsif ($filename eq 'subject.txt' || $filename eq 'SETTING.TXT') {
-        # subject.txt or SETTING.TXT ã®è¦æ±‚
+        # subject.txt or SETTING.TXT ‚Ì—v‹
         warn "tl_handler: $filename Request\n";
 
         $response_filename = File::Spec->catfile($CONF->{data_dir}, $filename);
@@ -119,7 +119,7 @@ sub tl_handler {
     if ($response_filename) {
         my $in_fh;
         if (! open $in_fh, '<:raw', $response_filename) {
-            # ãƒ•ã‚¡ã‚¤ãƒ«ã®ã‚ªãƒ¼ãƒ—ãƒ³ã«å¤±æ•—
+            # ƒtƒ@ƒCƒ‹‚ÌƒI[ƒvƒ“‚É¸”s
             warn "Cannot open file $response_filename: $!";
             set_error($res, HTTP_NOT_FOUND);
             return RC_OK;
@@ -130,7 +130,7 @@ sub tl_handler {
 
         my $r_code;
 
-        # If-Modified-Since ãƒ˜ãƒƒãƒ€å‡¦ç†
+        # If-Modified-Since ƒwƒbƒ_ˆ—
         if (my $if_mod_val = $req->header('If-Modified-Since')) {
             my $if_mod = str2time($if_mod_val);
             warn "tl_handler: If-Modified-Since = $if_mod, target file modified = $file_stat[9]\n";
@@ -141,7 +141,7 @@ sub tl_handler {
             }
         }
 
-        # Range ãƒªã‚¯ã‚¨ã‚¹ãƒˆå‡¦ç†
+        # Range ƒŠƒNƒGƒXƒgˆ—
         my ($readlen, $offset) = ($file_stat[7], 0);
         if (my $range = $req->header('Range')) {
             my ($start) = $range =~ /^bytes=(\d+)-/;
@@ -150,7 +150,7 @@ sub tl_handler {
                 my $len = $file_stat[7];
 
                 if ($start < $len) {
-                    # é€ã‚‹ã¹ããƒ‡ãƒ¼ã‚¿ãŒã‚ã‚‹
+                    # ‘—‚é‚×‚«ƒf[ƒ^‚ª‚ ‚é
                     $res->header('Accept-Ranges' => $start);
                     $res->header('Content-Range' => "bytes $start-$len/$len");
                     $offset = $start;
@@ -160,7 +160,7 @@ sub tl_handler {
                     warn "tl_handler: Content-Range = " . $res->header('Content-Range') . "\n";
                 }
                 else {
-                    #é€ã‚‹ã¹ããƒ‡ãƒ¼ã‚¿ãŒãªã„
+                    #‘—‚é‚×‚«ƒf[ƒ^‚ª‚È‚¢
                     warn "tl_handler: no content to send.\n";
                     set_error($res, HTTP_NOT_MODIFIED);
                     return RC_OK;
@@ -174,7 +174,7 @@ sub tl_handler {
         close $in_fh;
 
         if (! $sysread_len) {
-            # ãƒ•ã‚¡ã‚¤ãƒ«èª­ã¿è¾¼ã¿ã‚¨ãƒ©ãƒ¼
+            # ƒtƒ@ƒCƒ‹“Ç‚İ‚İƒGƒ‰[
             warn "tl_handler: Error! sysread() returned undef.\n";
             set_error($res, HTTP_INTERNAL_SERVER_ERROR);
             return RC_OK;
@@ -195,7 +195,7 @@ sub tl_handler {
         return RC_OK;
     }
     else {
-        # ãã®ä»–ã®ã‚¨ãƒ©ãƒ¼
+        # ‚»‚Ì‘¼‚ÌƒGƒ‰[
         warn "tl_handler: Request error ", $req->uri, "\n";
         set_error($res, HTTP_FORBIDDEN);
         return RC_OK;
@@ -259,11 +259,11 @@ sub bbs_handler {
             return RC_OK;
         }
 
-        # æ”¹è¡Œã‚³ãƒ¼ãƒ‰ã‚’çµ±ä¸€
+        # ‰üsƒR[ƒh‚ğ“ˆê
         $text =~ s/\x0D\x0A/\n/g;
         $text =~ tr/\x0D\x0A/\n\n/;
 
-        # æ–‡æœ«ã®ç©ºç™½æ–‡å­—ã¯å‰Šé™¤ã™ã‚‹
+        # •¶––‚Ì‹ó”’•¶š‚Ííœ‚·‚é
         $text =~ s/\s+\z//;
 
         my $thread_id = $q->param('key');
@@ -287,19 +287,19 @@ sub bbs_handler {
             warn 'bbs_handler: Post data: [', join(', ', @content), "]\n";
             my $result;
             if ($DatLine->update_status(\%args)) {
-                $result = 'æ›¸ãè¾¼ã¿ã«å¤±æ•—ã—ã¾ã—ãŸã€‚<br><br>å…ƒã®ç”»é¢ã«æˆ»ã£ã¦ã‚„ã‚Šç›´ã—ã¦ã¿ã¦ãã ã•ã„ã€‚'
+                $result = '‘‚«‚İ‚É¸”s‚µ‚Ü‚µ‚½B<br><br>Œ³‚Ì‰æ–Ê‚É–ß‚Á‚Ä‚â‚è’¼‚µ‚Ä‚İ‚Ä‚­‚¾‚³‚¢B'
             }
             else {
-                $result = 'æ›¸ãã“ã¿ãŒçµ‚ã‚ã‚Šã¾ã—ãŸã€‚<br><br>ç”»é¢ã‚’åˆ‡ã‚Šæ›¿ãˆã‚‹ã¾ã§ã—ã°ã‚‰ããŠå¾…ã¡ä¸‹ã•ã„ã€‚';
+                $result = '‘‚«‚±‚İ‚ªI‚í‚è‚Ü‚µ‚½B<br><br>‰æ–Ê‚ğØ‚è‘Ö‚¦‚é‚Ü‚Å‚µ‚Î‚ç‚­‚¨‘Ò‚¿‰º‚³‚¢B';
             }
 
             $poe_kernel->post($tl_session => 'tick');
-            @content = (qq{<html><head><title>æ›¸ãã“ã¿ã¾ã—ãŸã€‚</title><meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS"><META content=5;URL=../casket/ http-equiv=refresh></head><body>$result<br>});
+            @content = (qq{<html><head><title>‘‚«‚±‚İ‚Ü‚µ‚½B</title><meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS"><META content=5;URL=../casket/ http-equiv=refresh></head><body>$result<br>});
         }
     }
     else {
         @content = (
-           '<html><head><title>ãƒªã‚¶ãƒ«ãƒˆ</title><meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS"></head><body>ãƒªã‚¯ã‚¨ã‚¹ãƒˆçµæœ<br>',
+           '<html><head><title>ƒŠƒUƒ‹ƒg</title><meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS"></head><body>ƒŠƒNƒGƒXƒgŒ‹‰Ê<br>',
             'Fetched: ' . $req->uri->path,
             'Date: ' . localtime,
             'Method: ' . $req->method,
@@ -324,3 +324,330 @@ sub load_config {
 
     return LoadFile($fname);
 }
+=======#!/usr/bin/perl
+# Twitter ‚Ì TL => 2ch ŒİŠ· dat
+#
+
+use strict;
+use warnings;
+use utf8;
+
+use feature qw(say);
+use CGI;
+use FindBin;
+use File::Basename;
+use File::Spec;
+use HTTP::Date;
+use HTTP::Request::AsCGI;
+use HTTP::Status qw(:constants);
+use POE qw(Component::Server::HTTP);
+#use POE::Kernel;
+use Time::HiRes qw(time);
+use YAML::Syck;
+
+use DatLine;
+
+my $DatLine = DatLine->new({ config_dir => $FindBin::Bin });
+my $CONF = $DatLine->conf;
+
+# Web ƒT[ƒo[—p‚ÌƒZƒbƒVƒ‡ƒ“
+my $aliases = POE::Component::Server::HTTP->new(
+    Port => $CONF->{server}->{port},
+    ContentHandler => {
+        '/timeline/' => \&tl_handler,
+        '/' => \&bbs_handler,
+    },
+);
+
+# TL æ“¾—p‚ÌƒZƒbƒVƒ‡ƒ“
+my $tl_session = POE::Session->create(
+    inline_states => {
+        _start => \&start_handler,
+        get_tl => \&get_tl_handler,
+        tick => \&tick_handler,
+    },
+);
+
+POE::Kernel->run;
+
+sub start_handler {
+    my ($kern, $heap, $sess) = @_[KERNEL, HEAP, SESSION];
+    $heap->{datline} = $DatLine;
+    $heap->{next_alarm} = int(time()) + 1;
+    $kern->alarm(tick => $heap->{next_alarm});
+}
+
+sub get_tl_handler {
+    my ($kern, $heap, $sess) = @_[KERNEL, HEAP, SESSION];
+
+    my $datline = $heap->{datline};
+    $datline->get_timeline;
+
+    if (my $limit = $datline->get_api_limit) {
+        warn "Twitter API Status: remain $limit->{remaining_hits}, hourly limiy $limit->{hourly_limit}, reset time $limit->{reset_time}\n";
+    }
+
+    return;
+}
+
+sub tick_handler {
+    my ($kern, $heap, $sess) = @_[KERNEL, HEAP, SESSION];
+
+    $kern->yield('get_tl');
+    my $interval = $CONF->{interval} || 60;
+    $heap->{next_alarm} += $interval;
+    say "Next to get Timeline: ", scalar localtime($heap->{next_alarm});
+    $kern->alarm(tick => $heap->{next_alarm});
+    return;
+}
+
+sub tl_handler {
+    my ($req, $res) = @_;
+
+    if ($req->uri->path =~ m{/bbs\.cgi$}) {
+        return bbs_handler($req, $res);
+    }
+
+    warn "tl_handler: Request ", $req->uri, "\n";
+
+    if (my $temp = dump_headers($req)) {
+        warn "tl_handler: HTTP Header: $temp\n";
+    }
+
+    my @path = split '/', $req->uri->path;
+    my $filename = pop @path;
+    my $ext = (fileparse($filename, '.txt', '.dat'))[2];
+
+    warn "tl_handler: $filename, $ext";
+
+    if (! @path || ! $filename || ! $ext) {
+        # ƒGƒ‰[
+        warn "tl_handler: bad requst: ", $req->uri, "\n";
+
+        set_error($res, HTTP_FORBIDDEN);
+        return RC_OK;
+    }
+
+    my $response_filename;
+    if ($ext eq '.dat') {
+        # .dat ƒtƒ@ƒCƒ‹‚Ì—v‹
+        warn "tl_handler: DAT Request $filename\n";
+
+        $response_filename = File::Spec->catfile($CONF->{data_dir}, 'dat', $filename);
+    }
+    elsif ($filename eq 'subject.txt' || $filename eq 'SETTING.TXT') {
+        # subject.txt or SETTING.TXT ‚Ì—v‹
+        warn "tl_handler: $filename Request\n";
+
+        $response_filename = File::Spec->catfile($CONF->{data_dir}, $filename);
+    }
+
+    if ($response_filename) {
+        my $in_fh;
+        if (! open $in_fh, '<:raw', $response_filename) {
+            # ƒtƒ@ƒCƒ‹‚ÌƒI[ƒvƒ“‚É¸”s
+            warn "Cannot open file $response_filename: $!";
+            set_error($res, HTTP_NOT_FOUND);
+            return RC_OK;
+        }
+
+        warn "tl_handler: Open file $response_filename\n";
+        my @file_stat = stat $in_fh;
+
+        my $r_code;
+
+        # If-Modified-Since ƒwƒbƒ_ˆ—
+        if (my $if_mod_val = $req->header('If-Modified-Since')) {
+            my $if_mod = str2time($if_mod_val);
+            warn "tl_handler: If-Modified-Since = $if_mod, target file modified = $file_stat[9]\n";
+            if ($if_mod && $file_stat[9] <= $if_mod) {
+                warn "tl_handler: Not modified. skip.\n";
+                set_error($res, HTTP_NOT_MODIFIED);
+                return RC_OK;
+            }
+        }
+
+        # Range ƒŠƒNƒGƒXƒgˆ—
+        my ($readlen, $offset) = ($file_stat[7], 0);
+        if (my $range = $req->header('Range')) {
+            my ($start) = $range =~ /^bytes=(\d+)-/;
+            warn "tl_handler: Range start = $start\n";
+            if ($start && $start > 0) {
+                my $len = $file_stat[7];
+
+                if ($start < $len) {
+                    # ‘—‚é‚×‚«ƒf[ƒ^‚ª‚ ‚é
+                    $res->header('Accept-Ranges' => $start);
+                    $res->header('Content-Range' => "bytes $start-$len/$len");
+                    $offset = $start;
+                    $readlen -= $offset;
+                    sysseek $in_fh, $offset, 0;
+                    $r_code = 206;
+                    warn "tl_handler: Content-Range = " . $res->header('Content-Range') . "\n";
+                }
+                else {
+                    #‘—‚é‚×‚«ƒf[ƒ^‚ª‚È‚¢
+                    warn "tl_handler: no content to send.\n";
+                    set_error($res, HTTP_NOT_MODIFIED);
+                    return RC_OK;
+                }
+            }
+        }
+
+        warn "tl_handler: Read length $readlen, Offset $offset\n";
+        my $content = '';
+        my $sysread_len = sysread $in_fh, $content, $readlen;
+        close $in_fh;
+
+        if (! $sysread_len) {
+            # ƒtƒ@ƒCƒ‹“Ç‚İ‚İƒGƒ‰[
+            warn "tl_handler: Error! sysread() returned undef.\n";
+            set_error($res, HTTP_INTERNAL_SERVER_ERROR);
+            return RC_OK;
+        }
+
+        warn "tl_handler: Length ", length $content, ", sysread() length $sysread_len\n";
+
+        $r_code ||= 200;
+
+        $res->code($r_code);
+        $res->content_type('text/plain');
+        $res->content($content);
+
+        if (my $con_len = $res->header('Content-Length')) {
+            warn "tl_handler: Content-Length = $con_len\n";
+        }
+
+        return RC_OK;
+    }
+    else {
+        # ‚»‚Ì‘¼‚ÌƒGƒ‰[
+        warn "tl_handler: Request error ", $req->uri, "\n";
+        set_error($res, HTTP_FORBIDDEN);
+        return RC_OK;
+    }
+}
+
+sub set_error {
+    my ($res, $code, $text) = @_;
+
+    $code ||= HTTP_INTERNAL_SERVER_ERROR;
+    $text ||= "$code " . HTTP::Status::status_message($code);
+
+    $res->code($code);
+    $res->content_type('text/html');
+    $res->content("<html><head><title>$text</title></head><body><h1>$text</h1></body></html>");
+
+    return $res;
+}
+
+
+sub dump_headers {
+    my $req = shift;
+
+    my $headers = $req->headers or return;
+
+    my @result;
+    for my $name ($headers->header_field_names) {
+        push @result, qq{Header "$name": } . $headers->header($name);
+    }
+
+    return join ', ', @result;
+}
+
+sub bbs_handler {
+    my ($req, $res) = @_;
+
+    warn "bbs_handler: Request ", $req->uri, "\n";
+
+    if (my $temp = dump_headers($req)) {
+        warn "$temp\n";
+    }
+
+    my @content;
+
+    my $decoder = $DatLine->encoder;
+    if ($req->method eq 'POST' && $req->uri->path =~ m{/test/bbs\.cgi$}) {
+        my $c = HTTP::Request::AsCGI->new($req)->setup;
+        my $q = CGI->new;
+
+        my @temp;
+        for my $name ($q->param) {
+            push @temp, "$name = " . $decoder->decode($q->param($name))
+        }
+        warn 'bbs_handler: POST Data[', join(', ', @temp), "]\n";
+
+        my $text = $decoder->decode($q->param('MESSAGE'));
+
+        if (! $text) {
+            warn "bbs_handler: BAD REQUEST(no MESSAGE)\n";
+            set_error($res, HTTP_BAD_REQUEST);
+            return RC_OK;
+        }
+
+        # ‰üsƒR[ƒh‚ğ“ˆê
+        $text =~ s/\x0D\x0A/\n/g;
+        $text =~ tr/\x0D\x0A/\n\n/;
+
+        # •¶––‚Ì‹ó”’•¶š‚Ííœ‚·‚é
+        $text =~ s/\s+\z//;
+
+        my $thread_id = $q->param('key');
+        my $from = $decoder->decode($q->param('FROM'));
+        if ($text && $thread_id) {
+            my %args;
+
+            if ($text =~ /^(>>(\d+)\s*)/) {
+                my $txt = $1;
+                $args{in_reply_to} = $2;
+                $args{in_reply_to_thread} = $thread_id;
+                $text =~ s/^$1//;
+            }
+
+            $args{status} = $text;
+
+            for my $k (sort keys %args) {
+                push @content, "$k = $args{$k}";
+            }
+
+            warn 'bbs_handler: Post data: [', join(', ', @content), "]\n";
+            my $result;
+            if (! $DatLine->update_status(\%args)) {
+                $result = '‘‚«‚İ‚É¸”s‚µ‚Ü‚µ‚½B<br><br>Œ³‚Ì‰æ–Ê‚É–ß‚Á‚Ä‚â‚è’¼‚µ‚Ä‚İ‚Ä‚­‚¾‚³‚¢B'
+            }
+            else {
+                $result = '‘‚«‚±‚İ‚ªI‚í‚è‚Ü‚µ‚½B<br><br>‰æ–Ê‚ğØ‚è‘Ö‚¦‚é‚Ü‚Å‚µ‚Î‚ç‚­‚¨‘Ò‚¿‰º‚³‚¢B';
+            }
+
+            $poe_kernel->post($tl_session => 'tick');
+            @content = (qq{<html><head><title>‘‚«‚±‚İ‚Ü‚µ‚½B</title><meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS"><META content=5;URL=../casket/ http-equiv=refresh></head><body>$result<br>});
+        }
+    }
+    else {
+        @content = (
+           '<html><head><title>ƒŠƒUƒ‹ƒg</title><meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS"></head><body>ƒŠƒNƒGƒXƒgŒ‹‰Ê<br>',
+            'Fetched: ' . $req->uri->path,
+            'Date: ' . localtime,
+            'Method: ' . $req->method,
+        );
+    }
+
+    push @content, '</body></html>';
+
+    warn "Response: ", join(', ', @content, "\n");
+
+    $res->content_type('text/html');
+    #$res->headers->header(CacheControl => 'no-cache');
+    #$res->headers->header(Expires => '-1');
+    $res->content($decoder->encode(join("<br>\r\n", @content)));
+    $res->code(200);
+
+    return RC_OK;
+}
+
+sub load_config {
+    my $fname = File::Spec->catfile($FindBin::Bin, 'config.yml');
+
+    return LoadFile($fname);
+}
+>>>>>>> .theirs

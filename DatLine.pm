@@ -12,13 +12,26 @@ use DateTime::Format::Strptime;
 use Encode ();
 use File::Basename;
 use File::Spec;
+<<<<<<< HEAD
 use JSON::Any qw/XS JSON/;
 use List::MoreUtils qw(any);
 use LWP::UserAgent;
+=======
+use List::MoreUtils qw(any);
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
 use Net::Twitter::Lite;
 use URI;
 use YAML::Syck;
 
+<<<<<<< HEAD
+=======
+local $YAML::Syck::ImplicitUnicode = 1;
+
+use DatLine::Subjects;
+use DatLine::Util;
+use DatLine::ShortenURL;
+
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
 use version;
 our $VERSION = qv('0.0.1');
 sub VERSION { $VERSION }
@@ -26,12 +39,23 @@ sub VERSION { $VERSION }
 use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(qw(conf encoder subject_list latest_id res_list tw thread_fh));
 
+<<<<<<< HEAD
+=======
+
+my $http_regex =
+    q{\b(?:https?|shttp)://(?:(?:[-_.!~*'()a-zA-Z0-9;:&=+$,]|%[0-9A-Fa-f][0-9A-Fa-f])*@)?(?:(?:[a-zA-Z0-9](?:[-a-zA-Z0-9]*[a-zA-Z0-9])?\.)*[a-zA-Z](?:[-a-zA-Z0-9]*[a-zA-Z0-9])?\.?|[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)(?::[0-9]*)?(?:/(?:[-_.!~*'()a-zA-Z0-9:@&=+$,]|%[0-9A-Fa-f][0-9A-Fa-f])*(?:;(?:[-_.!~*'()a-zA-Z0-9:@&=+$,]|%[0-9A-Fa-f][0-9A-Fa-f])*)*(?:/(?:[-_.!~*'()a-zA-Z0-9:@&=+$,]|%[0-9A-Fa-f][0-9A-Fa-f])*(?:;(?:[-_.!~*'()a-zA-Z0-9:@&=+$,]|%[0-9A-Fa-f][0-9A-Fa-f])*)*)*)?(?:\?(?:[-_.!~*'()a-zA-Z0-9;/?:@&=+$,]|%[0-9A-Fa-f][0-9A-Fa-f])*)?(?:#(?:[-_.!~*'()a-zA-Z0-9;/?:@&=+$,]|%[0-9A-Fa-f][0-9A-Fa-f])*)?};
+
+
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
 sub new {
     my ($class, $param) = @_;
 
     my $self = bless {
         conf => {},
+<<<<<<< HEAD
         subject_list => [],
+=======
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
         latest_id => 0,
         res_list => {},
         thread_fh => 0,
@@ -39,11 +63,34 @@ sub new {
 
     # 設定ファイル読み込み
     $self->conf(_load_config($param->{config_dir}));
+<<<<<<< HEAD
     if (exists $self->conf->{term_encoding}) {
         my $enc = $self->conf->{term_encoding};
         binmode STDOUT, ":encoding($enc)";
         binmode STDERR, ":encoding($enc)";
     }
+=======
+
+    my $term_enc;
+    if (exists $self->conf->{term_encoding}) {
+        $term_enc = delete $self->conf->{term_encoding};
+    }
+    elsif (eval { require Term::Encoding; } ) {
+        $term_enc = Term::Encoding::term_encoding();
+    }
+    $term_enc ||= 'utf8';
+
+    if ($term_enc) {
+        $self->{term_encoder} = Encode::find_encoding($term_enc);
+        binmode STDOUT, ":encoding($term_enc)";
+        binmode STDERR, ":encoding($term_enc)";
+    }
+
+    $self->{subject_list} = DatLine::Subjects->new({
+        subject_dir => $self->conf->{data_dir},
+        encoder => $self->{term_encoder},
+    });
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
 
     # dat ファイルのエンコーディング指定
     my $encoding = $self->conf->{dat_encoding} || 'cp932';
@@ -79,8 +126,11 @@ sub new {
             require ExtUtils::MakeMaker;
 
             print "OAuth 認証 開始\n";
+<<<<<<< HEAD
             #$self->tw->request_token_url('https://twitter.com/oauth/request_token');
             #$self->tw->authorization_url('https://twitter.com/oauth/authorize');
+=======
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
 
             my $url = eval { $self->tw->get_authorization_url };
             if ($@) {
@@ -94,10 +144,23 @@ sub new {
             chomp $pin;
             $pin or Carp::croak("Invalid pin");
 
+<<<<<<< HEAD
             my ($access_token, $access_token_secret, $user_id, $screen_name) =
                 $self->tw->request_access_token(verifier => $pin);
 
             if (! $access_token || ! $access_token_secret) {
+=======
+            $pin = $self->{term_encoder}->decode($pin);
+            warn "PIN#: $pin\n";
+
+            my ($access_token, $access_token_secret, $user_id, $screen_name) =
+                eval { $self->tw->request_access_token(verifier => $pin) };
+
+            if ($@) {
+                Carp::croak("OAuth 認証に失敗: $@");
+            }
+            elsif (! $access_token || ! $access_token_secret) {
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
                 Carp::croak("OAuth 認証に失敗しました。時間をおいて再試行してみてください。");
             }
 
@@ -123,11 +186,19 @@ sub new {
     # 短縮 URL 向け
     if (exists $self->conf->{shorturl}) {
         warn "Short URL Service available.\n";
+<<<<<<< HEAD
         $self->{json_agent} = JSON::Any->new(utf8 => 1);
     }
 
     # subject.txt 読み込み
     $self->load_subject;
+=======
+        $self->{shorten_url} = DatLine::ShortenURL->new($self->conf->{shorturl});
+    }
+
+    # subject.txt 読み込み
+    $self->subject_list->load;
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
 
     return $self;
 }
@@ -142,6 +213,7 @@ sub DESTROY {
     return;
 }
 
+<<<<<<< HEAD
 sub push_subject {
     my $self = shift;
     my $thread = [ @_ ];
@@ -150,6 +222,8 @@ sub push_subject {
     return $thread;
 }
 
+=======
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
 sub current_thread {
     my ($self, $thread) = @_;
 
@@ -167,12 +241,20 @@ sub get_thread {
     my ($self, $num) = @_;
     $num ||= 0;
 
+<<<<<<< HEAD
     my $sub_list = $self->subject_list;
 
     my $thread;
     if ($num > $self->{max_thread}) {
         my $fname = File::Spec->catfile($self->conf->{data_dir}, 'dat', "$num.dat");
         if (open my $in_fh, '<', $fname) {
+=======
+    my $thread;
+    if ($num > $self->{max_thread}) {
+        my $fname = File::Spec->catfile($self->conf->{data_dir}, 'dat', "$num.dat");
+        my $term_encoder = $self->{term_encoder};
+        if (open my $in_fh, '<', $term_encoder->encode($fname)) {
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
             warn "get_thread: Direct open dat file $fname\n";
 
             my $enc = $self->encoder;
@@ -187,7 +269,11 @@ sub get_thread {
             }
             close $in_fh;
 
+<<<<<<< HEAD
             $thread = [basename($fname), $title, $cnt];
+=======
+            $thread = [basename($fname), unescape_html($title), $cnt];
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
         }
         else {
             carp("get_thread: cannot find dat file $num");
@@ -195,7 +281,11 @@ sub get_thread {
         }
     }
     else {
+<<<<<<< HEAD
         $thread = $sub_list->[$num];
+=======
+        $thread = $self->subject_list->get($num);
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
     }
 
     if (! $thread || $thread->[2] > $self->conf->{max_res}) {
@@ -220,6 +310,7 @@ sub get_thread_filename {
     return File::Spec->catfile($self->conf->{data_dir}, 'dat', $fname);
 }
 
+<<<<<<< HEAD
 sub load_subject {
     my $self = shift;
 
@@ -282,6 +373,8 @@ sub save_subject {
     return $self;
 }
 
+=======
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
 sub create_thread {
     my ($self, $args) = @_;
     $args ||= {};
@@ -295,7 +388,14 @@ sub create_thread {
         ? $args->{title} . ' ' . $now->strftime('%Y/%m/%d(%a) %T')
         : $now->strftime('%Y/%m/%d(%a) %T') . ' に立てられたスレッド';
 
+<<<<<<< HEAD
     return $self->push_subject($fname, $title, 0);
+=======
+    my $subject = [$fname, $title, 0];
+    $self->subject_list->unshift($subject);
+
+    return $subject;
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
 }
 
 sub open_thread {
@@ -406,7 +506,11 @@ sub write_res {
 
 
     print {$out_fh} $enc->encode(
+<<<<<<< HEAD
         join('<>', map(_escape_html($_), @res)) . '<>', Encode::FB_HTMLCREF);
+=======
+        join('<>', map(escape_html($_), @res)) . '<>', Encode::FB_HTMLCREF);
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
 
 
     # 1 レス目ならスレッドタイトルも書き込む
@@ -427,8 +531,11 @@ sub write_res {
         $self->res_list->{$item->{id}} = $thread->[2];
     }
 
+<<<<<<< HEAD
     warn 'Write res[', $thread->[2], ']: ', join(', ', @res), "\n";
 
+=======
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
     return $self;
 }
 
@@ -447,6 +554,19 @@ sub update_status {
         return;
     }
 
+<<<<<<< HEAD
+=======
+    # URL の短縮化
+    if (my $shorten_agent = $self->{shorten_url}) {
+        for my $url ($text =~ /($http_regex)/g) {
+            my $short_url = $shorten_agent->to_short($url);
+            $short_url or next;
+            $text =~ s/$url/$short_url/;
+            warn "update_status: shorten URL $url => $short_url\n";
+        }
+    }
+
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
     my %param;
 
     # Reply 先の ID を取得
@@ -513,8 +633,13 @@ sub get_timeline {
     # リクエストパラメータ
     my %param = (count => $tl_count);
 
+<<<<<<< HEAD
     # dat ファイルオープン
     $self->load_subject;
+=======
+    # subject.txt 読み込み
+    $self->subject_list->load;
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
 
     my $thread = $self->current_thread;
     if (! $thread) {
@@ -547,6 +672,17 @@ sub get_timeline {
     my $exceed_id_list = $self->conf->{timeline}->{exceed_id};
     $exceed_id_list ||= [];
     warn "get_timeline: Exceed ID: ", join(', ', @$exceed_id_list), "\n";
+<<<<<<< HEAD
+=======
+
+    my ($short_url, $url_regex);
+    if (exists $self->{shorten_url}) {
+        $short_url = $self->{shorten_url};
+        $url_regex = $short_url->get_url_regex;
+        warn "Shorten URL Regex: $url_regex\n";
+    }
+
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
     for my $item (reverse @$ret) {
         my $screen_name = $item->{user}->{screen_name};
         if (! $screen_name) {
@@ -559,6 +695,7 @@ sub get_timeline {
         }
 
         # 短縮 URL を展開
+<<<<<<< HEAD
         my $text = $item->{text};
         if (my @short_url_list = $text =~ m{(http://(?:bit\.ly|j\.mp)/[0-9a-zA-Z]+)}g) {
             for my $url (@short_url_list) {
@@ -576,6 +713,30 @@ sub get_timeline {
             }
 
             $item->{text} = $text;
+=======
+        if ($short_url) {
+            my $text = $item->{text};
+            if (my (@short_url_list) = $text =~ /($url_regex)/g) {
+                for my $url (@short_url_list) {
+                    warn "get_timeline: Found short URL $url\n";
+                    my $long_url;
+                    if (exists $longurl_cache{$url}) {
+                        $long_url = $longurl_cache{$url};
+                        $text =~ s/$url/$long_url/;
+                        warn "get_timeline: expand URL $url => $long_url (cached)\n";
+                    }
+                    elsif ($long_url = $short_url->to_long($url)) {
+                        $text =~ s/$url/$long_url/;
+                        warn "get_timeline: expand URL $url => $long_url\n";
+                    }
+                    else {
+                        warn "get_timeline: cannot expand shorten url. $url\n";
+                    }
+                }
+
+                $item->{text} = $text;
+            }
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
         }
 
         $self->write_res($item);
@@ -584,6 +745,7 @@ sub get_timeline {
     # スレを閉じる
     $self->close_thread;
 
+<<<<<<< HEAD
     $self->save_subject;
 
     return;
@@ -616,6 +778,13 @@ sub _unescape_html {
     $stuff =~ s/&amp;/&/g;
 
     return $stuff;
+=======
+    warn "get_timeline: converted ", scalar @$ret, " tweet(s).\n";
+
+    $self->subject_list->save;
+
+    return;
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
 }
 
 sub _load_config {
@@ -624,6 +793,7 @@ sub _load_config {
     return LoadFile($fname);
 }
 
+<<<<<<< HEAD
 sub get_shorten_url {
     my ($self, $long_url) = @_;
 
@@ -710,6 +880,8 @@ sub get_expand_url {
     return $long_url;
 }
 
+=======
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
 sub save_token {
     my ($self, $token, $secret) = @_;
 
@@ -805,6 +977,14 @@ sub get_api_limit {
         return;
     }
 
+<<<<<<< HEAD
+=======
+    if (my $dt = $self->{tw_strp}->parse_datetime($result->{reset_time})) {
+        $dt->set_locale('ja');
+        $result->{reset_time} = $dt->strftime('%Y/%m/%d(%a) %T');
+    }
+
+>>>>>>> 7cc0aee9fb2343efa70c60792567837652b694d6
     return $result;
 }
 
