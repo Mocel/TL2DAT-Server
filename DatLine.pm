@@ -492,7 +492,6 @@ sub get_timeline {
     }
 
     $self->open_thread;
-    _put_log('Thread filename: ', $thread);
 
     # 最新スレの最後のレス ID
     $param{since_id} = $self->latest_id if $self->latest_id;
