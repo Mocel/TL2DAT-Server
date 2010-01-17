@@ -129,14 +129,21 @@ sub get {
     my ($self, $idx) = @_;
     $idx ||= 0;
 
-    if ($idx =~ /\.dat$/) {
-        my $i = firstidx { $_->[0] eq $idx } @{ $self->{subject_list} };
+    my $list = $self->{subject_list};
+
+    if (ref($idx) && ref($idx) eq 'Regexp') {
+        my $i = firstidx { $_->[1] =~ $idx } @$list;
         return if $i == -1;
-        return $self->{subject_list}->[$i];
+        return $list->[$i];
+    }
+    if ($idx =~ /\.dat$/) {
+        my $i = firstidx { $_->[0] eq $idx } @$list;
+        return if $i == -1;
+        return $list->[$i];
     }
 
-    $idx < @{ $self->{subject_list} } or return;
-    return $self->{subject_list}->[$idx];
+    $idx < @$list or return;
+    return $list->[$idx];
 }
 
 sub put {
