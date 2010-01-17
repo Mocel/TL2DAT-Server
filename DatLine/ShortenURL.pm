@@ -14,6 +14,7 @@ our $VERSION = qv('0.0.1');
 
 my $ua;
 my $json_agent;
+my $cache;
 
 my $url_regex = join('|',
     'http://(?:bit\.ly|j\.mp)/\w+',
@@ -28,7 +29,7 @@ sub new {
     my ($class, $arg) = @_;
 
     my $self = bless +{
-        conf => $arg,
+        conf => $arg->{conf},
     }, $class;
 
     $ua ||= LWP::UserAgent->new(
@@ -38,7 +39,18 @@ sub new {
         agent => "$self/$VERSION",
     );
 
-    $json_agent = JSON::Any->new(utf8 => 1);
+    $json_agent ||= JSON::Any->new(utf8 => 1);
+
+    if (eval { require DatLine::ShortenURL::Cache; }) {
+        warn __PACKAGE__, ": Cache module available.\n";
+        $cache ||= DatLine::ShortenURL::Cache->new({
+            db_dir => $arg->{db_dir},
+            term_encoder => $arg->{term_encoder},
+        });
+    }
+    else {
+        warn __PACKAGE__, ": Cache module unavailable.\n";
+    }
 
     return $self;
 }
@@ -72,18 +84,18 @@ sub to_short_bitly {
 
     my $res = $ua->get($req_url);
     if (! $res->is_success) {
-        carp("get_shorten_url: get short url failed: ", $res->status_line);
+        carp("to_short_bitly: get short url failed: ", $res->status_line);
         return;
     }
 
     my $result = eval { $json_agent->from_json($res->decoded_content) };
     if ($@) {
-        carp("get_shorten_url: JSON parse failed: $@");
+        carp("to_short_bitly: JSON parse failed: $@");
         return;
     }
     elsif (! $result->{statusCode} || $result->{statusCode} ne 'OK') {
         my $msg = $result->{errorMessage} || '(unknown)';
-        carp("get_shorten_url: API Call failed: $msg");
+        carp("to_short_bitly: API Call failed: $msg");
         return;
     }
 
@@ -96,10 +108,21 @@ sub to_long {
     $short_uri or return;
     $short_uri =~ m/$url_regex/ or return;
 
+    if ($cache) {
+        my $result = $cache->get($short_uri);
+        if ($result) {
+            warn "to_long: expanded $result (cached)\n";
+            return $result;
+        }
+    }
+
     my $res = $ua->get($short_uri);
     $res->is_redirect or return;
 
     my $result = $res->header('Location') or return;
+
+    $cache and $cache->put($short_uri, $result);
+
     return $result;
 }
 
