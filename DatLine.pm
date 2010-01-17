@@ -77,12 +77,12 @@ sub new {
     # Twitter API Agent
     if (exists $self->conf->{oauth}) {
         # OAuth
-        warn __PACKAGE__, ": OAuth mode\n";
+        _put_log('OAuth mode');
 
         my ($ckey, $csecret) =
             ($self->conf->{oauth}->{consumer_key}, $self->conf->{oauth}->{consumer_secret});
 
-        warn __PACKAGE__, ": Consumer key $ckey, Secret $csecret\n";
+        _put_log("Consumer key $ckey, Secret $csecret");
 
         $self->{tw} = Net::Twitter::Lite->new(
             #ssl => 1,
@@ -114,7 +114,7 @@ sub new {
             $pin or Carp::croak("Invalid pin");
 
             $pin = $self->{term_encoder}->decode($pin);
-            warn "PIN#: $pin\n";
+            _put_log("PIN#: $pin");
 
             my ($access_token, $access_token_secret, $user_id, $screen_name) =
                 eval { $self->tw->request_access_token(verifier => $pin) };
@@ -126,14 +126,14 @@ sub new {
                 Carp::croak("OAuth 認証に失敗しました。時間をおいて再試行してみてください。");
             }
 
-            warn __PACKAGE__, ": Get Access Token succeed.\n";
+            _put_log("Get Access Token succeed.");
 
             $self->save_token($access_token, $access_token_secret);
         }
     }
     else {
         # BASIC Authorization
-        warn __PACKAGE__, ": Basic Auth mode\n";
+        _put_log('Basic Auth mode');
         $self->{tw} = Net::Twitter::Lite->new(
                 ssl => 1,
                 %{ $self->conf->{twitter} },
@@ -147,7 +147,7 @@ sub new {
 
     # 短縮 URL 向け
     if (exists $self->conf->{shorturl}) {
-        warn "Short URL Service available.\n";
+        _put_log('Short URL Service available.');
         $self->{shorten_url} = DatLine::ShortenURL->new({
             conf => $self->conf->{shorturl},
             db_dir => $self->{conf}->{db_dir},
@@ -193,7 +193,7 @@ sub get_thread {
         my $fname = File::Spec->catfile($self->conf->{data_dir}, 'dat', "$num.dat");
         my $term_encoder = $self->{term_encoder};
         if (open my $in_fh, '<', $term_encoder->encode($fname)) {
-            warn "get_thread: Direct open dat file $fname\n";
+            _put_log("Direct open dat file $fname");
 
             my $enc = $self->encoder;
             my $cnt = 0;
@@ -250,7 +250,7 @@ sub create_thread {
 
     my $fname = $now->epoch . '.dat';
     my $title = (exists $args->{title})
-        ? $args->{title} . ' ' . $now->strftime('%Y%m%d%T')
+        ? $args->{title} . ' ' . $now->strftime('%Y/%m/%d(%a) %T')
         : 'タイムライン ' . $now->strftime('%Y/%m/%d(%a) %T');
 
     my $subject = [$fname, $title, 0];
@@ -268,7 +268,7 @@ sub open_thread {
 
     if (! $thread) {
         carp('Thread not found: ' . (defined $arg) ? $arg : '');
-        return $thread;
+        return;
     }
 
     my $fname = $self->get_thread_filename($thread);
@@ -278,7 +278,7 @@ sub open_thread {
         open my $fh, '+<', $fname
             or croak("Cannot open file $fname: $!");
 
-        warn "open_thread: open dat file $fname\n";
+        _put_log("open dat file $fname");
         $self->thread_fh($fh);
         my %res_list;
 
@@ -311,7 +311,7 @@ sub open_thread {
         open my $fh, '>', $fname
             or croak("Cannot open file $fname: $!");
 
-        warn "open_thread: create dat file $fname\n";
+        _put_log("create dat file $fname");
         $self->thread_fh($fh);
         $self->res_list( +{} );
     }
@@ -324,8 +324,8 @@ sub close_thread {
 
     $self->thread_fh or return;
     close $self->{thread_fh};
-    $self->{thread_fh} = undef;
-    $self->{current_thread} = undef;
+    delete $self->{thread_fh};
+    delete $self->{current_thread};
 
     return $self;
 }
@@ -355,7 +355,7 @@ sub write_res {
     if ($reply_to_id && exists $res_list->{$reply_to_id}) {
         my $res_no = $res_list->{$reply_to_id};
         $body = ">>$res_no\x0D\x0A" . $body;
-        warn "Found reply: $item->{id} => $reply_to_id\n";
+        _put_log("Found reply $item->{id} => $reply_to_id");
     }
 
     my @res = (
@@ -412,7 +412,7 @@ sub update_status {
             my $short_url = $shorten_agent->to_short($url);
             $short_url or next;
             $text =~ s/$url/$short_url/;
-            warn "update_status: shorten URL $url => $short_url\n";
+            _put_log('shorten URL ', $url, ' => ', $short_url);
         }
     }
 
@@ -441,7 +441,7 @@ sub update_status {
         if (exists $res_list->{$no}) {
             my $reply_id = $res_list->{$no};
             $param{in_reply_to_status_id} = $reply_id;
-            warn "Found reply_to id: $thread_id\:$no => $reply_id\n";
+            _put_log('Found reply_to id ', $thread_id, ':', $no, ' => ', $reply_id);
         }
 
         if (exists $res_list->{"$no\@user"}) {
@@ -458,7 +458,7 @@ sub update_status {
     for my $k (sort keys %param) {
         push @temp, "Key \[$k] = $param{$k}";
     }
-    warn "update_status: ", join(', ', @temp), "\n";
+    _put_log(join(', ', @temp));
 
     eval { $self->tw->update(\%param) };
     if (my $error = $@) {
@@ -466,7 +466,7 @@ sub update_status {
             && $error->code() == 502) {
             $error = "Fail Whale!";
         }
-        warn "$error";
+        _put_log($error);
         return;
     }
 
@@ -492,13 +492,10 @@ sub get_timeline {
     }
 
     $self->open_thread;
-    warn "Thread filename: $thread->[0]\n";
+    _put_log('Thread filename: ', $thread);
 
     # 最新スレの最後のレス ID
     $param{since_id} = $self->latest_id if $self->latest_id;
-
-    # 短縮 URL のキャッシュ用
-    my %longurl_cache;
 
     # TL 取得
     my $ret = eval { $self->tw->home_timeline(\%param) };
@@ -515,13 +512,12 @@ sub get_timeline {
     # dat 書き込み
     my $exceed_id_list = $self->conf->{timeline}->{exceed_id};
     $exceed_id_list ||= [];
-    warn "get_timeline: Exceed ID: ", join(', ', @$exceed_id_list), "\n";
+    _put_log('Exceed ID ', join(', ', @$exceed_id_list));
 
-    my ($short_url, $url_regex);
-    if (exists $self->{shorten_url}) {
-        $short_url = $self->{shorten_url};
-        $url_regex = $short_url->get_url_regex;
-        warn "Shorten URL Regex: $url_regex\n";
+    my $url_regex;
+    if (defined $self->{shorten_url}) {
+        $url_regex = $self->{shorten_url}->get_url_regex;
+        _put_log('Shorten URL Regex ', $url_regex);
     }
 
     for my $item (reverse @$ret) {
@@ -531,34 +527,13 @@ sub get_timeline {
             next;
         }
         if (any { $_ eq $screen_name } @$exceed_id_list) {
-            warn "get_timeline: \[$screen_name] is listed on exceed. skipped.\n";
+            _put_log("\[$screen_name] is listed on exceed. skipped.");
             next;
         }
 
         # 短縮 URL を展開
-        if ($short_url) {
-            my $text = $item->{text};
-            if (my (@short_url_list) = $text =~ /($url_regex)/g) {
-                for my $url (@short_url_list) {
-                    warn "get_timeline: Found short URL $url\n";
-                    my $long_url;
-                    if (exists $longurl_cache{$url}) {
-                        $long_url = $longurl_cache{$url};
-                        $text =~ s/$url/$long_url/;
-                        warn "get_timeline: expand URL $url => $long_url (cached)\n";
-                    }
-                    elsif ($long_url = $short_url->to_long($url)) {
-                        $text =~ s/$url/$long_url/;
-                        warn "get_timeline: expand URL $url => $long_url\n";
-                    }
-                    else {
-                        warn "get_timeline: cannot expand shorten url. $url\n";
-                    }
-                }
-
-                $item->{text} = $text;
-            }
-        }
+        $item->{text} = $self->expand_shorten_url($item->{text}, $url_regex)
+            if defined $url_regex;
 
         $self->write_res($item);
     }
@@ -566,11 +541,32 @@ sub get_timeline {
     # スレを閉じる
     $self->close_thread;
 
-    warn "get_timeline: converted ", scalar @$ret, " tweet(s).\n";
+    _put_log("converted ", scalar @$ret, " tweet(s).");
 
     $self->subject_list->save;
 
     return;
+}
+
+sub expand_shorten_url {
+    my ($self, $text, $url_regex) = @_;
+
+    defined $self->{shorten_url} or return $text;
+
+    if (my @short_url_list = $text =~ /($url_regex)/g) {
+        for my $url (@short_url_list) {
+            _put_log("Found short URL $url");
+            if (my $long_url = $self->{shorten_url}->to_long($url)) {
+                $text =~ s/$url/$long_url/;
+                _put_log("expand URL $url => $long_url");
+            }
+            else {
+                _put_log("cannot expand shorten url. $url");
+            }
+        }
+    }
+
+    return $text;
 }
 
 sub _load_config {
@@ -604,11 +600,11 @@ sub save_token {
         if ($f == 1) {
             # oauth: まで読んだ
             $line =~ /^\s+consumer_key:/ and ++$f;
-            warn "save_token: Found [consukey_key]\n";
+            _put_log("Found \[consukey_key]");
         }
         elsif ($f == 2 && $line =~ /^(\s+)consumer_secret:/) {
             # consumer_key: まで読んだ
-            warn "save_token: Found [consukey_secret]\n";
+            _put_log("Found \[consukey_secret]");
             my $indent = $1;
 
             print {$out_fh} "$line\n";
@@ -630,7 +626,7 @@ sub save_token {
     close $out_fh;
     close $fh;
 
-    warn "save_token: Saved access token & secret.\n";
+    _put_log("Saved an access token and secret.");
 
     return 1;
 }
@@ -642,7 +638,7 @@ sub get_access_token {
     my $conf = $self->conf->{oauth};
 
     if (! exists $conf->{access_token} || ! exists $conf->{access_token_secret}) {
-        warn "get_access_token: token not found.\n";
+        _put_log('token not found.');
         return;
     }
 
@@ -650,11 +646,11 @@ sub get_access_token {
         @$conf{qw(access_token access_token_secret)};
 
     if (! $access_token || ! $access_secret) {
-        warn "get_access_token: invalid token.\n";
+        _put_log('invalid token.');
         return;
     }
 
-    warn "get_access_token: Found Access token and Secret.\n";
+    _put_log('Found Access token and Secret.');
 
     $tw->access_token($access_token);
     $tw->access_token_secret($access_secret);
@@ -682,6 +678,12 @@ sub get_api_limit {
     return $result;
 }
 
+
+sub _put_log {
+    my @caller = caller(1);
+    warn "$caller[3]: ", @_, "\n";
+    return;
+}
 
 1;
 
